@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Quality &middot; TeamHR</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Data Quality</div>
+                <h1 class="page-title">Data Quality</h1>
+                <p class="page-subtitle">Potential data issues flagged for review</p>
+            </div>
+            {% include 'partials/_search.html' %}
+        </header>
+
+        <section class="dq-summary">
+            <p class="page-subtitle">Analyzing <strong>{{ total }}</strong> candidates. Categories are informational; nothing here uploads or deletes anything.</p>
+        </section>
+
+        <section class="kpi-grid" id="dqCards">
+            {% for card in cards %}
+            <div class="kpi-card" data-key="{{ card.key }}" tabindex="0" role="button" aria-expanded="false">
+                <div class="kpi-count dq-sev-{{ card.severity | lower }}">{{ card.count }}</div>
+                <div class="kpi-label">{{ card.label }}</div>
+                <div class="kpi-desc">Severity: {{ card.severity }}</div>
+                <span class="kpi-arrow">&#9662;</span>
+            </div>
+            {% endfor %}
+        </section>
+
+        <section class="settings-section" id="dqDetail" hidden>
+            <h3 class="settings-heading" id="dqDetailTitle">Detail</h3>
+            <p class="page-subtitle" id="dqDetailSub"></p>
+            <table class="data-table">
+                <thead><tr><th>Candidate ID</th><th>Name</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody id="dqBody"></tbody>
+            </table>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var index = {
+                /* key -> [candidate_ids] filled by template */
+                {% for card in cards %}
+                "{{ card.key }}": {{ card.candidate_ids | tojson }},
+                {% endfor %}
+            };
+            var names = {
+                {% for card in cards %}
+                "{{ card.key }}": "{{ card.label }}",
+                {% endfor %}
+            };
+            document.querySelectorAll("#dqCards .kpi-card").forEach(function (el) {
+                el.addEventListener("click", function () {
+                    var key = el.getAttribute("data-key");
+                    var open = el.getAttribute("aria-expanded") === "true";
+                    document.querySelectorAll("#dqCards .kpi-card").forEach(function (o) {
+                        o.setAttribute("aria-expanded", "false");
+                    });
+                    document.getElementById("dqDetail").hidden = !!open;
+                    if (open) return;
+                    el.setAttribute("aria-expanded", "true");
+                    var ids = index[key] || [];
+                    document.getElementById("dqDetailTitle").textContent = names[key] + " (" + ids.length + ")";
+                    document.getElementById("dqDetailSub").textContent =
+                        "Click a candidate to open its review page.";
+                    var tb = document.getElementById("dqBody");
+                    tb.innerHTML = "";
+                    if (!ids.length) {
+                        tb.innerHTML = "<tr><td colspan='4' class='empty-row'>No candidates in this bucket.</td></tr>";
+                        return;
+                    }
+                    ids.forEach(function (id) {
+                        var tr = document.createElement("tr");
+                        tr.innerHTML = "<td>#" + id + "</td><td><a href='/manual-entry?edit=" + id + "'>Open</a></td>" +
+                            "<td>&mdash;</td><td><a href='/manual-entry?edit=" + id + "' class='btn btn-sm btn-outline'>Review</a></td>";
+                        tb.appendChild(tr);
+                    });
+                });
+            });
+        })();
+    </script>
+</body>
+</html>

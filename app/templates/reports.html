@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reports - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Reports</div>
+                <h1 class="page-title">Reports</h1>
+                <p class="page-subtitle">Generated onboarding files and candidate counts</p>
+            </div>
+        </header>
+
+        <section aria-label="Summary key performance indicators">
+            <h3 class="section-heading">Candidate Summary</h3>
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-count">{{ counts.total | default(0) }}</div>
+                    <div class="kpi-label">Total Candidates</div>
+                    <div class="kpi-desc">All time</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-draft">{{ counts.draft | default(0) }}</div>
+                    <div class="kpi-label">Draft</div>
+                    <div class="kpi-desc">Incomplete records</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ counts.ready | default(0) }}</div>
+                    <div class="kpi-label">Ready</div>
+                    <div class="kpi-desc">Awaiting generation</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-generated">{{ counts.generated | default(0) }}</div>
+                    <div class="kpi-label">Generated</div>
+                    <div class="kpi-desc">Onboarding files created</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-attention">{{ counts.needs_attention | default(0) }}</div>
+                    <div class="kpi-label">Needs Attention</div>
+                    <div class="kpi-desc">Requires review</div>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Generated files">
+            <h3 class="section-heading">Generated Files</h3>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Batch</th>
+                        <th>Filename</th>
+                        <th>Date Folder</th>
+                        <th>Candidates</th>
+                        <th>Status</th>
+                        <th>Generated At</th>
+                    </tr>
+                </thead>
+                <tbody id="generatedFilesBody">
+                    <tr><td colspan="7" class="ui-loading"><div class="spinner"></div>Loading…</td></tr>
+                </tbody>
+            </table>
+            <div id="generatedFilesEmpty" class="ui-empty" hidden>
+                <span class="empty-ic">&#128196;</span>
+                No generated files yet. Generate onboarding Excel from Batch Review to see files here.
+            </div>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var tbody = document.getElementById("generatedFilesBody");
+            var emptyEl = document.getElementById("generatedFilesEmpty");
+
+            fetch("/api/generated")
+                .then(function (res) { return res.json(); })
+                .then(function (data) {
+                    var files = (data && data.files) ? data.files : [];
+                    tbody.innerHTML = "";
+                    if (!files.length) {
+                        tbody.parentElement.hidden = true;
+                        emptyEl.hidden = false;
+                        return;
+                    }
+                    files.forEach(function (f) {
+                        var tr = document.createElement("tr");
+                        tr.innerHTML =
+                            "<td>" + (f.file_id || "—") + "</td>" +
+                            "<td>" + (f.batch_id || "—") + "</td>" +
+                            "<td>" + (f.filename || "—") + "</td>" +
+                            "<td>" + (f.date_folder || "—") + "</td>" +
+                            "<td>" + (f.candidate_count != null ? f.candidate_count : "—") + "</td>" +
+                            "<td><span class='status-badge status-" + ((f.generation_status || "").toLowerCase() === "generated" ? "ready" : "draft") + "'>" + (f.generation_status || "—") + "</span></td>" +
+                            "<td>" + (f.generated_at || "—") + "</td>";
+                        tbody.appendChild(tr);
+                    });
+                })
+                .catch(function () {
+                    tbody.innerHTML = "";
+                    tbody.parentElement.hidden = true;
+                    emptyEl.hidden = false;
+                });
+        })();
+    </script>
+</body>
+</html>

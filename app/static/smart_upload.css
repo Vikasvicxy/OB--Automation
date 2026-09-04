@@ -1,0 +1,418 @@
+/* ── Smart Upload ─────────────────────────────────────────────────────────── */
+
+/* Paste Helper */
+.paste-helper {
+    background: #eff6ff;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent-blue);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    margin-bottom: 20px;
+    font-size: 0.88rem;
+    color: var(--text);
+}
+
+/* Upload Zone */
+.smart-upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    padding: 60px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--transition);
+    outline: none;
+}
+.smart-upload-zone:hover,
+.smart-upload-zone.dragover {
+    border-color: var(--accent-blue);
+    background: #f5f9ff;
+}
+.smart-upload-icon {
+    font-size: 3rem;
+    color: var(--accent-blue);
+    margin-bottom: 12px;
+}
+.smart-upload-zone h2 {
+    font-size: 1.2rem;
+    margin: 0 0 6px;
+    color: var(--text);
+}
+.smart-upload-supported {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 0 0 20px;
+}
+
+/* Uploaded Files Section */
+.uploaded-section {
+    margin-top: 24px;
+}
+.uploaded-files-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+.uploaded-files-header h3 {
+    font-size: 1rem;
+    margin: 0;
+    color: var(--text);
+}
+.uploaded-files-header h3 span {
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+.uploaded-files-actions {
+    display: flex;
+    gap: 8px;
+}
+.uploaded-files-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+}
+.uploaded-file-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px;
+    background: var(--bg);
+}
+.uploaded-file-thumb {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-sm);
+    background: #eef2f7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    color: var(--text-secondary);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.uploaded-file-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.uploaded-file-info {
+    min-width: 0;
+}
+.uploaded-file-name {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+}
+.uploaded-file-meta {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+.uploaded-file-remove {
+    background: none;
+    border: none;
+    color: #dc2626;
+    font-size: 0.72rem;
+    cursor: pointer;
+    padding: 0;
+}
+.uploaded-file-remove:hover {
+    text-decoration: underline;
+}
+
+/* SMART READ Notice */
+.smart-upload-disabled-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-top: 24px;
+}
+.notice-icon {
+    font-size: 1.8rem;
+    color: var(--accent-blue);
+}
+.notice-body h3 {
+    margin: 0 0 4px;
+    font-size: 0.95rem;
+    color: var(--text);
+}
+.notice-body p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+/* ── Review Step ─────────────────────────────────────────────────────────── */
+.smart-review-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+.review-title {
+    margin: 0;
+    font-size: 1.15rem;
+    color: var(--text);
+}
+.review-subtitle {
+    margin: 2px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+/* Fallback banner */
+.fallback-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: #fef3c7;
+    border: 1px solid #f59e0b;
+    border-left: 4px solid #f59e0b;
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+.fallback-icon {
+    font-size: 1.4rem;
+}
+.fallback-body strong {
+    color: #92400e;
+}
+.fallback-body p {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: #92400e;
+}
+
+/* Attention banner */
+.attention-banner {
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+    border-left: 4px solid #f97316;
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    color: #7c2d12;
+}
+.attention-banner ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+/* Source files block */
+.src-files-block {
+    margin-bottom: 16px;
+}
+.src-files-title {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+.src-files-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.src-file-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 0.78rem;
+    color: var(--text);
+}
+.src-file-chip::before {
+    content: "\1F4CE";
+    font-size: 0.7rem;
+}
+
+/* Review form */
+.review-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+}
+.rf-field {
+    display: flex;
+    flex-direction: column;
+}
+.rf-field-wide {
+    grid-column: 1 / -1;
+}
+.rf-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 5px;
+}
+.rf-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+    min-height: 18px;
+}
+.rf-source {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+}
+.field-note {
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    margin: 4px 0 0;
+}
+.badge-readonly {
+    background: #e5e7eb;
+    color: #374151;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.75rem;
+}
+.auto-fields {
+    display: flex;
+    gap: 12px;
+}
+.auto-field {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.auto-label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+/* Confidence badges */
+.cf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.cf-high { background: #dcfce7; color: #15803d; }
+.cf-review { background: #fef9c3; color: #a16207; }
+.cf-missing { background: #fee2e2; color: #b91c1c; }
+
+.rf-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 28px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+}
+.rf-actions-spacer {
+    flex: 1;
+}
+
+/* ── Evidence UI (Why? toggle) ─────────────────────────────────────────────── */
+
+.evidence-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    font-size: 0.75rem;
+    color: var(--text-muted, #666);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.evidence-toggle:hover {
+    background: #f0f0f0;
+}
+
+.evidence-details {
+    margin-top: 4px;
+    padding: 0;
+}
+
+.evidence-card {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.evidence-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.evidence-conf {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+}
+.evidence-score {
+    color: #666;
+    font-size: 0.78rem;
+}
+
+.evidence-reasons {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0;
+}
+
+.evidence-reason-pos {
+    color: #15803d;
+    padding: 1px 0;
+}
+.evidence-reason-pos::before {
+    content: "";
+}
+
+.evidence-runner {
+    color: #666;
+    font-size: 0.78rem;
+    margin-top: 3px;
+    padding-top: 3px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.evidence-candidates {
+    color: #888;
+    font-size: 0.75rem;
+    margin-top: 2px;
+}
+
+.cf-conflict { background: #fee2e2; color: #b91c1c; }

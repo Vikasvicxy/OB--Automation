@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candidates - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+    <style>
+        .candidates-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+        .filter-group{display:flex;gap:6px;flex-wrap:wrap}
+        .filter-btn{padding:5px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);font-size:0.82rem;cursor:pointer;transition:all var(--transition)}
+        .filter-btn:hover{border-color:var(--accent-blue);color:var(--accent-blue)}
+        .filter-btn.active{background:var(--accent-blue);color:#fff;border-color:var(--accent-blue)}
+        .candidates-count{font-size:0.85rem;color:var(--text-secondary);margin-left:auto}
+        .action-cell{display:flex;gap:6px;white-space:nowrap}
+        .empty-state{text-align:center;padding:48px 20px;color:var(--text-secondary)}
+        .empty-state .empty-ic{font-size:2rem;display:block;margin-bottom:8px}
+    </style>
+</head>
+<body>
+    {% set nav_active = 'candidates' %}
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Candidates</div>
+                <h1 class="page-title">Candidates</h1>
+                <p class="page-subtitle">Manage and search all registered candidates</p>
+            </div>
+        </header>
+
+        <section class="settings-section">
+            <div class="candidates-toolbar">
+                <div class="filter-group" id="statusFilters">
+                    <button class="filter-btn active" data-status="all">All</button>
+                    <button class="filter-btn" data-status="draft">Draft</button>
+                    <button class="filter-btn" data-status="needs_attention">Needs Attention</button>
+                    <button class="filter-btn" data-status="ready">Ready</button>
+                    <button class="filter-btn" data-status="generated">Generated</button>
+                </div>
+                <span class="candidates-count" id="candidatesCount">Showing {{ candidates | length }} candidates</span>
+            </div>
+
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Mobile</th>
+                        <th>Status</th>
+                        <th>Batch</th>
+                        <th>Entity / Cost Code</th>
+                        <th>Operation</th>
+                        <th>Facility</th>
+                        <th>Role</th>
+                        <th>Salary</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="candidatesBody">
+                    {% for c in candidates %}
+                    <tr data-status="{{ (c.status or '') | lower }}" data-id="{{ c.candidate_id }}">
+                        <td>#{{ c.candidate_id }}</td>
+                        <td>{{ c.name or '' }}</td>
+                        <td>{{ c.mobile or '' }}</td>
+                        <td><span class="status-badge status-{{ (c.status or 'draft') | lower | replace(' ', '-') }}">{{ c.status or 'Draft' }}</span></td>
+                        <td>{{ c.batch_id or '' }}</td>
+                        <td>{{ c.entity or '' }}{% if c.cost_code %} / {{ c.cost_code }}{% endif %}</td>
+                        <td>{{ c.operation or '' }}</td>
+                        <td>{{ c.facility_name or '' }}</td>
+                        <td>{{ c.designation or '' }}</td>
+                        <td>{{ c.salary_display or c.salary or '' }}</td>
+                        <td>
+                            <div class="action-cell">
+                                <a href="/manual-entry?edit={{ c.candidate_id }}" class="btn btn-sm btn-outline">Edit</a>
+                                <button class="btn btn-sm btn-danger" onclick="removeCandidate({{ c.candidate_id }}, this)">Remove</button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="empty-state" id="emptyState" style="display:none">
+                <span class="empty-ic">&#128269;</span>
+                No candidates found
+            </div>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var tbody = document.getElementById("candidatesBody");
+            var countEl = document.getElementById("candidatesCount");
+            var emptyEl = document.getElementById("emptyState");
+            var activeStatus = "all";
+
+            function escapeHtml(str) {
+                var div = document.createElement("div");
+                div.appendChild(document.createTextNode(str));
+                return div.innerHTML;
+            }
+
+            function getRowHtml(c) {
+                var status = (c.status || "Draft").toLowerCase();
+                var entityCost = escapeHtml(c.entity || "");
+                if (c.cost_code) entityCost += " / " + escapeHtml(c.cost_code);
+                return "<tr data-status=\"" + escapeHtml(status) + "\" data-id=\"" + c.candidate_id + "\">" +
+                    "<td>#" + c.candidate_id + "</td>" +
+                    "<td>" + escapeHtml(c.name || "") + "</td>" +
+                    "<td>" + escapeHtml(c.mobile || "") + "</td>" +
+                    "<td><span class=\"status-badge status-" + escapeHtml(status.replace(/ /g, "-")) + "\">" + escapeHtml(c.status || "Draft") + "</span></td>" +
+                    "<td>" + c.batch_id + "</td>" +
+                    "<td>" + entityCost + "</td>" +
+                    "<td>" + escapeHtml(c.operation || "") + "</td>" +
+                    "<td>" + escapeHtml(c.facility_name || "") + "</td>" +
+                    "<td>" + escapeHtml(c.designation || "") + "</td>" +
+                    "<td>" + escapeHtml(c.salary_display || c.salary || "") + "</td>" +
+                    "<td><div class=\"action-cell\">" +
+                    "<a href=\"/manual-entry?edit=" + c.candidate_id + "\" class=\"btn btn-sm btn-outline\">Edit</a>" +
+                    "<button class=\"btn btn-sm btn-danger\" onclick=\"removeCandidate(" + c.candidate_id + ", this)\">Remove</button>" +
+                    "</div></td></tr>";
+            }
+
+            function applyFilter() {
+                var rows = tbody.querySelectorAll("tr");
+                var visible = 0;
+                for (var i = 0; i < rows.length; i++) {
+                    var st = rows[i].getAttribute("data-status") || "";
+                    var show = activeStatus === "all" || st === activeStatus;
+                    rows[i].style.display = show ? "" : "none";
+                    if (show) visible++;
+                }
+                countEl.textContent = "Showing " + visible + " candidates";
+                emptyEl.style.display = visible === 0 ? "" : "none";
+            }
+
+            var filterBtns = document.querySelectorAll("#statusFilters .filter-btn");
+            for (var i = 0; i < filterBtns.length; i++) {
+                filterBtns[i].addEventListener("click", function () {
+                    for (var j = 0; j < filterBtns.length; j++) filterBtns[j].classList.remove("active");
+                    this.classList.add("active");
+                    activeStatus = this.getAttribute("data-status");
+                    applyFilter();
+                });
+            }
+
+            var searchInput = document.getElementById("globalSearchInput");
+            var debounceTimer = null;
+            if (searchInput) {
+                searchInput.addEventListener("input", function () {
+                    var q = this.value;
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(function () {
+                        var url = "/api/candidates" + (q ? "?search=" + encodeURIComponent(q) : "");
+                        fetch(url)
+                            .then(function (r) { return r.json(); })
+                            .then(function (data) {
+                                tbody.innerHTML = "";
+                                if (!data || data.length === 0) {
+                                    applyFilter();
+                                    return;
+                                }
+                                for (var i = 0; i < data.length; i++) {
+                                    tbody.insertAdjacentHTML("beforeend", getRowHtml(data[i]));
+                                }
+                                applyFilter();
+                            })
+                            .catch(function () {});
+                    }, 300);
+                });
+            }
+
+            applyFilter();
+        })();
+
+        function removeCandidate(id, btn) {
+            if (!confirm("Remove candidate #" + id + "?")) return;
+            fetch("/api/remove-candidate/" + id, { method: "POST" })
+                .then(function () { location.reload(); });
+        }
+    </script>
+</body>
+</html>

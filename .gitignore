@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Runtime data (sensitive - never commit)
+data/database/
+data/generated/
+data/uploads/
+
+# Benchmark images (real Aadhaar - never commit)
+data/ocr_benchmark/input/
+data/ocr_benchmark/output/
+
+# OS
+.DS_Store
+Thumbs.db
+
+venv/
+__pycache__/
+*.pyc
+.env
+data/database/
+data/generated/
+data/backups/
+data/portal/
+.pytest_cache/

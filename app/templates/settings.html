@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <h1 class="page-title">Settings</h1>
+                <p class="page-subtitle">Backup &amp; restore, health &amp; master data</p>
+            </div>
+        </header>
+
+        {# ── 1. MASTER STATUS ─────────────────────────────────────────── #}
+        <section aria-label="Master data status">
+            <h3 class="section-heading">Master Data Status</h3>
+            <div class="kpi-grid">
+                {% for key in ['designation', 'facility', 'self_onboarding'] %}
+                {% set ms = (master_status or {}).get(key) or {} %}
+                <div class="kpi-card">
+                    <div class="kpi-count {% if ms.get('configured') %}kpi-tone-ready{% else %}kpi-tone-fail{% endif %}">
+                        {% if ms.get('configured') %}&#10003;{% else %}&#10007;{% endif %}
+                    </div>
+                    <div class="kpi-label">{{ ms.get('name', key) }}</div>
+                    <div class="kpi-desc">{{ ms.get('status', 'Unknown') }}</div>
+                    {% if ms.get('row_count') %}
+                    <p class="settings-card-desc">
+                        <span class="status-badge {% if ms.get('configured') %}status-ready{% else %}status-fail{% endif %}">{{ ms.get('row_count') }} rows</span>
+                    </p>
+                    {% endif %}
+                </div>
+                {% endfor %}
+
+                {% set admin = admin_master_status or {} %}
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ admin.get('effective_facilities', 0) }}</div>
+                    <div class="kpi-label">Effective Facilities</div>
+                    <div class="kpi-desc">Excel {{ admin.get('excel_facilities', 0) }} + Admin {{ admin.get('admin_facilities', 0) }}</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ admin.get('effective_roles', 0) }}</div>
+                    <div class="kpi-label">Effective Roles</div>
+                    <div class="kpi-desc">Excel {{ admin.get('excel_roles', 0) }} + Admin {{ admin.get('admin_roles', 0) }}</div>
+                </div>
+            </div>
+            <p style="margin-bottom:16px">
+                <button id="btnReloadMasters" class="btn btn-sm btn-outline" style="padding:8px 20px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-card);cursor:pointer;font-weight:600;">Reload Masters</button>
+                <span id="reloadStatus" style="margin-left:12px;font-size:0.85rem;color:var(--text-secondary);"></span>
+            </p>
+        </section>
+
+        {# ── 2. ADMIN MASTER LINK ─────────────────────────────────────── #}
+        <section aria-label="Admin master links">
+            <h3 class="section-heading">Admin Master Data</h3>
+            <div class="settings-grid">
+                <a href="/admin/master-data" class="settings-card">
+                    <div class="settings-card-title">Admin Master Data</div>
+                    <div class="settings-card-status {% if admin.get('admin_enabled') %}configured{% endif %}">{% if admin.get('admin_enabled') %}Enabled{% else %}Disabled{% endif %}</div>
+                    <p class="settings-card-desc">Manage facilities, roles and aliases</p>
+                </a>
+                <a href="/validation" class="settings-card">
+                    <div class="settings-card-title">Validation</div>
+                    <div class="settings-card-status configured">Logic Tests</div>
+                    <p class="settings-card-desc">Run resolver validation cases</p>
+                </a>
+            </div>
+        </section>
+
+        {# ── 3. MASTER LOAD HISTORY ───────────────────────────────────── #}
+        <section aria-label="Master load history">
+            <h3 class="section-heading">Master Load History</h3>
+            {% if master_history %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Filename</th>
+                        <th>Rows</th>
+                        <th>Loaded At</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in master_history %}
+                    <tr>
+                        <td>{{ h.get('master_type', '') }}</td>
+                        <td>{{ h.get('filename', '') }}</td>
+                        <td>{{ h.get('row_count', 0) }}</td>
+                        <td>{{ h.get('loaded_at', '') }}</td>
+                        <td>
+                            <span class="status-badge {% if h.get('status', '')|lower in ['ok', 'configured'] %}status-ready{% else %}status-fail{% endif %}">{{ h.get('status', '') }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128203;</span>No master load history yet</div>
+            {% endif %}
+        </section>
+
+        {# ── 4. OUTPUT CONFIG / GENERATION ────────────────────────────── #}
+        <section aria-label="Output configuration">
+            <h3 class="section-heading">Output Configuration</h3>
+            {% set oc = output_config or {} %}
+            <div class="settings-grid">
+                <div class="settings-card">
+                    <div class="settings-card-title">Output Directory</div>
+                    <div class="settings-card-status configured">{{ oc.get('output_base_dir', '') }}</div>
+                    <p class="settings-card-desc">Default: {{ oc.get('default_output_base_dir', '') }}</p>
+                </div>
+                <div class="settings-card">
+                    <div class="settings-card-title">Self Onboarding Template</div>
+                    <div class="settings-card-status {% if oc.get('template_configured') %}configured{% endif %}">
+                        {% if oc.get('template_configured') %}Configured{% else %}Not Configured{% endif %}
+                    </div>
+                    <p class="settings-card-desc">{{ oc.get('template_file', '') }}</p>
+                </div>
+                {% if oc.get('captured') %}
+                <div class="settings-card">
+                    <div class="settings-card-title">Last Generated</div>
+                    <div class="settings-card-status configured">{{ oc.get('captured', {}).get('filename', '') }}</div>
+                    <p class="settings-card-desc">{{ oc.get('captured', {}).get('generated_at', '') }} &mdash; {{ oc.get('captured', {}).get('candidate_count', 0) }} candidates (batch {{ oc.get('captured', {}).get('batch_id', '') }})</p>
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        <section aria-label="Generated files">
+            <h3 class="section-heading">Generated Files</h3>
+            {% if generated_history %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th>Batch</th>
+                        <th>Candidates</th>
+                        <th>Generated At</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for gf in generated_history %}
+                    <tr>
+                        <td>{{ gf.get('filename', '') }}</td>
+                        <td>{{ gf.get('batch_id', '') }}</td>
+                        <td>{{ gf.get('candidate_count', 0) }}</td>
+                        <td>{{ gf.get('generated_at', '') }}</td>
+                        <td>
+                            <span class="status-badge {% if (gf.get('generation_status', '')|lower) in ['generated', 'success'] %}status-ready{% else %}status-fail{% endif %}">{{ gf.get('generation_status', '') }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128196;</span>No generated files yet</div>
+            {% endif %}
+        </section>
+
+        <section aria-label="Generation audit">
+            <h3 class="section-heading">Generation Audit</h3>
+            {% if generation_audit %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Audit ID</th>
+                        <th>Batch</th>
+                        <th>File ID</th>
+                        <th>Template</th>
+                        <th>At</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ga in generation_audit %}
+                    <tr>
+                        <td>#{{ ga.get('audit_id', '') }}</td>
+                        <td>{{ ga.get('batch_id', '') }}</td>
+                        <td>{{ ga.get('generated_file_id', '') }}</td>
+                        <td>{{ ga.get('template_name', '') }}</td>
+                        <td>{{ ga.get('generated_at', '') }}</td>
+                        <td>
+                            <span class="status-badge {% if (ga.get('status', '')|lower) in ['ok', 'success'] %}status-ready{% else %}status-fail{% endif %}">{{ ga.get('status', '') }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128203;</span>No generation history yet</div>
+            {% endif %}
+        </section>
+
+        {# ── 5. PORTAL ────────────────────────────────────────────────── #}
+        <section aria-label="Portal status">
+            <h3 class="section-heading">eSampark Portal</h3>
+            {% set ps = portal_status or {} %}
+            <div class="settings-grid">
+                <div class="settings-card">
+                    <div class="settings-card-title">Portal Status</div>
+                    <div class="settings-card-status {% if ps.get('configured') %}configured{% endif %}">
+                        {{ ps.get('status', 'Unknown') }}
+                    </div>
+                    <p class="settings-card-desc">
+                        Credentials: <span class="status-badge {% if ps.get('configured') %}status-ready{% else %}status-fail{% endif %}">{% if ps.get('configured') %}Configured{% else %}Not Configured{% endif %}</span>
+                        {% if ps.get('session_saved') %}
+                        <span class="status-badge status-ready" style="margin-left:4px;">Session Saved</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="settings-card">
+                    <div class="settings-card-title">Portal User</div>
+                    <div class="settings-card-status">{{ ps.get('username', 'N/A') }}</div>
+                    <p class="settings-card-desc">Authenticated account (no secrets shown)</p>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Portal uploads">
+            <h3 class="section-heading">Portal Uploads</h3>
+            {% if portal_uploads %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Upload ID</th>
+                        <th>File</th>
+                        <th>Batch</th>
+                        <th>Started</th>
+                        <th>Completed</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pu in portal_uploads %}
+                    <tr>
+                        <td>#{{ pu.get('portal_upload_id', '') }}</td>
+                        <td>{{ pu.get('filename', '') }}</td>
+                        <td>{{ pu.get('batch_id', '') }}</td>
+                        <td>{{ pu.get('started_at', '') }}</td>
+                        <td>{{ pu.get('completed_at', '') or '—' }}</td>
+                        <td>
+                            {% set pus = (pu.get('portal_status', '') or '')|lower %}
+                            <span class="status-badge {% if pus in ['success', 'portal uploaded', 'link generated'] %}status-ready{% elif pus in ['failed', 'error'] %}status-fail{% else %}{% endif %}">{{ pu.get('portal_status', '') }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128228;</span>No portal uploads yet</div>
+            {% endif %}
+        </section>
+
+        <section aria-label="Portal audit">
+            <h3 class="section-heading">Portal Audit Log</h3>
+            {% if portal_audit %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Audit ID</th>
+                        <th>Event</th>
+                        <th>Status</th>
+                        <th>Detail</th>
+                        <th>At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pa in portal_audit %}
+                    <tr>
+                        <td>#{{ pa.get('audit_id', '') }}</td>
+                        <td>{{ pa.get('event', '') }}</td>
+                        <td>
+                            <span class="status-badge {% if (pa.get('status', '')|lower) in ['info', 'success'] %}status-ready{% elif (pa.get('status', '')|lower) in ['error', 'failed'] %}status-fail{% endif %}">{{ pa.get('status', '') }}</span>
+                        </td>
+                        <td>{{ pa.get('detail', '') }}</td>
+                        <td>{{ pa.get('occurred_at', '') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128203;</span>No portal audit events yet</div>
+            {% endif %}
+        </section>
+
+        {# ── 6. DAILY MASTER MIRROR ───────────────────────────────────── #}
+        <section aria-label="Daily master mirror">
+            <h3 class="section-heading">Daily Master Mirror</h3>
+            {% if daily_master %}
+            <p class="page-subtitle" style="margin-bottom:12px;">{{ daily_master | length }} candidate(s) mirrored</p>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Entity</th>
+                        <th>Cost Code</th>
+                        <th>Designation</th>
+                        <th>Facility</th>
+                        <th>Status</th>
+                        <th>Portal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for dm in daily_master %}
+                    <tr>
+                        <td>{{ dm.get('candidate_id', '') }}</td>
+                        <td>{{ dm.get('name', '') }}</td>
+                        <td>{{ dm.get('entity', '') }}</td>
+                        <td>{{ dm.get('cost_code', '') }}</td>
+                        <td>{{ dm.get('designation', '') }}</td>
+                        <td>{{ dm.get('facility_name', '') }}</td>
+                        <td>
+                            <span class="status-badge {% if (dm.get('status', '')|lower) == 'ready' %}status-ready{% elif (dm.get('status', '')|lower) == 'generated' %}status-ready{% else %}{% endif %}">{{ dm.get('status', '') }}</span>
+                        </td>
+                        <td>
+                            {% set dmps = (dm.get('portal_status', '') or '')|lower %}
+                            {% if dmps %}
+                            <span class="status-badge {% if dmps in ['success', 'portal uploaded', 'link generated'] %}status-ready{% elif dmps in ['failed'] %}status-fail{% endif %}">{{ dm.get('portal_status', '') }}</span>
+                            {% else %}&mdash;{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128202;</span>No daily master records yet</div>
+            {% endif %}
+        </section>
+
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var btn = document.getElementById('btnReloadMasters');
+            var status = document.getElementById('reloadStatus');
+            if (btn) {
+                btn.addEventListener('click', function () {
+                    btn.disabled = true;
+                    status.textContent = 'Reloading...';
+                    fetch('/api/reload-masters', { method: 'POST' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (data.reloaded) {
+                                var s = data.status || {};
+                                var parts = [];
+                                if (s.designation) parts.push('Designation: ' + (s.designation.status || 'OK') + ' (' + (s.designation.row_count || 0) + ' rows)');
+                                if (s.facility) parts.push('Facility: ' + (s.facility.status || 'OK') + ' (' + (s.facility.row_count || 0) + ' rows)');
+                                status.textContent = parts.length ? parts.join(' | ') : 'Masters reloaded.';
+                                if (typeof showToast === 'function') showToast('success', 'Masters reloaded successfully.');
+                            } else {
+                                status.textContent = 'Reload complete.';
+                            }
+                            btn.disabled = false;
+                        })
+                        .catch(function () {
+                            status.textContent = 'Reload failed. Check server.';
+                            btn.disabled = false;
+                        });
+                });
+            }
+        })();
+    </script>
+</body>
+</html>

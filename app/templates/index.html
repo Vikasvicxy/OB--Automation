@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <h1 class="page-title">Dashboard</h1>
+                <p class="page-subtitle">TeamHR Automation &mdash; Recruitment Onboarding</p>
+            </div>
+        </header>
+
+        <section aria-label="Quick actions">
+            <div class="action-cards">
+                <a href="/smart-upload" class="card card-upload" id="btnSmartUpload">
+                    <div class="card-icon upload-icon">&#8682;</div>
+                    <div class="card-body">
+                        <h2>Smart Upload</h2>
+                        <p>Upload screenshots, Aadhaar photos or PDFs. Smart Fill will extract candidate details for review.</p>
+                    </div>
+                    <span class="card-arrow">&#8250;</span>
+                </a>
+                <a href="/manual-entry" class="card card-manual" id="btnManualEntry">
+                    <div class="card-icon manual-icon">&#9997;</div>
+                    <div class="card-body">
+                        <h2>Manual Entry</h2>
+                        <p>Enter candidate details one at a time with guided form fields and validation.</p>
+                    </div>
+                    <span class="card-arrow">&#8250;</span>
+                </a>
+            </div>
+        </section>
+
+        <section aria-label="Top key performance indicators">
+            <h3 class="section-heading">Overview</h3>
+            <div class="kpi-grid">
+                <a href="/candidates" class="kpi-card">
+                    <div class="kpi-count">{{ stats.today_total }}</div>
+                    <div class="kpi-label">Today's Candidates</div>
+                    <div class="kpi-desc">Created today</div>
+                    <span class="kpi-arrow">&#8250;</span>
+                </a>
+                <a href="/data-quality" class="kpi-card">
+                    <div class="kpi-count kpi-tone-attention">{{ stats.needs_review }}</div>
+                    <div class="kpi-label">Needs Review</div>
+                    <div class="kpi-desc">Attention required</div>
+                    <span class="kpi-arrow">&#8250;</span>
+                </a>
+                <a href="/batch-review" class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ stats.ready }}</div>
+                    <div class="kpi-label">Ready</div>
+                    <div class="kpi-desc">Awaiting generation</div>
+                    <span class="kpi-arrow">&#8250;</span>
+                </a>
+                <a href="/reports" class="kpi-card">
+                    <div class="kpi-count kpi-tone-generated">{{ stats.generated }}</div>
+                    <div class="kpi-label">Generated</div>
+                    <div class="kpi-desc">Onboarding files</div>
+                    <span class="kpi-arrow">&#8250;</span>
+                </a>
+                <a href="/portal" class="kpi-card">
+                    <div class="kpi-count kpi-tone-generated">{{ stats.portal.success }}</div>
+                    <div class="kpi-label">Portal Success</div>
+                    <div class="kpi-desc">Uploaded OK</div>
+                    <span class="kpi-arrow">&#8250;</span>
+                </a>
+                <a href="/portal" class="kpi-card">
+                    <div class="kpi-count kpi-tone-fail">{{ stats.portal.failed }}</div>
+                    <div class="kpi-label">Portal Failed</div>
+                    <div class="kpi-desc">Errors to check</div>
+                    <span class="kpi-arrow">&#8250;</span>
+                </a>
+            </div>
+        </section>
+
+        <section aria-label="Secondary key performance indicators">
+            <div class="kpi-grid kpi-grid-sm">
+                <a href="/batch-review" class="kpi-card kpi-card-sm">
+                    <div class="kpi-count">{{ stats.batches_today }}</div>
+                    <div class="kpi-label">Today's Batches</div>
+                </a>
+                <a href="/data-quality" class="kpi-card kpi-card-sm">
+                    <div class="kpi-count kpi-tone-fail">{{ stats.duplicate_warnings }}</div>
+                    <div class="kpi-label">Duplicate Warnings</div>
+                </a>
+                <a href="/reports" class="kpi-card kpi-card-sm">
+                    <div class="kpi-count">{{ stats.excel_files }}</div>
+                    <div class="kpi-label">Excel Files</div>
+                </a>
+                <a href="/settings" class="kpi-card kpi-card-sm">
+                    <div class="kpi-count kpi-tone-ready">&bull;</div>
+                    <div class="kpi-label">Master Health</div>
+                </a>
+            </div>
+        </section>
+
+        <section aria-label="Candidates by cost code">
+            <h3 class="section-heading">Candidates by Cost Code</h3>
+            <div class="settings-grid">
+                {% for cc, n in (stats.by_cost_code or {}).items() %}
+                <div class="settings-card">
+                    <div class="settings-card-title">Cost Code {{ cc }}</div>
+                    <div class="settings-card-status configured">{{ n }} candidate(s)</div>
+                    <p class="settings-card-desc">
+                        <span class="status-badge status-ready">{{ cc }}</span>
+                    </p>
+                </div>
+                {% else %}
+                <div class="ui-empty"><span class="empty-ic">&#128202;</span>No candidates yet</div>
+                {% endfor %}
+            </div>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+</body>
+</html>

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual Validation - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+    <style>
+        .val-section { margin-bottom: 28px; }
+        .val-head h3 { margin: 0 0 4px; }
+        .val-sub { color: #666; font-size: 13px; }
+        .val-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+        .val-stat { background: #f6f8fa; border: 1px solid #e2e6ea; border-radius: 8px; padding: 12px; }
+        .val-stat .n { font-size: 24px; font-weight: 700; }
+        .val-stat .l { font-size: 12px; color: #666; }
+        .val-stat.pass .n { color: #1a7f37; }
+        .val-stat.fail .n { color: #cf222e; }
+        .val-stat.review .n { color: #9a6700; }
+        .val-stat.warn .n { color: #bf8700; }
+        table.val-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        table.val-table th, table.val-table td { border: 1px solid #e2e6ea; padding: 6px 8px; text-align: left; vertical-align: top; }
+        table.val-table th { background: #f6f8fa; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+        .badge.pass { background: #dafbe1; color: #1a7f37; }
+        .badge.fail { background: #ffd7d0; color: #cf222e; }
+        .badge.review { background: #fff8c5; color: #9a6700; }
+        .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+        .scenario { white-space: pre-wrap; }
+        .row-actions { white-space: nowrap; }
+        .row-actions button { margin: 2px 2px 0 0; }
+        .detail-panel { background: #fafbfc; border: 1px solid #e2e6ea; border-radius: 6px; padding: 8px; margin-top: 6px; display: none; }
+        .field-line { font-size: 12px; }
+        .field-line .r-pass { color: #1a7f37; font-weight: 700; }
+        .field-line .r-fail { color: #cf222e; font-weight: 700; }
+        .field-line .r-skip { color: #888; }
+        .hint { color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <h1 class="page-title">Validation</h1>
+                <p class="page-subtitle">Resolver validation &mdash; {{ selected_set }} set</p>
+            </div>
+        </header>
+
+        <section aria-label="Set switcher">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+                <a href="/validation?set=A" class="badge {% if selected_set == 'A' %}pass{% else %}review{% endif %}" style="text-decoration:none;cursor:pointer;">Set A ({{ set_a_count }})</a>
+                <a href="/validation?set=B" class="badge {% if selected_set == 'B' %}pass{% else %}review{% endif %}" style="text-decoration:none;cursor:pointer;">Set B ({{ set_b_count }})</a>
+                <a href="/validation?set=C" class="badge {% if selected_set == 'C' %}pass{% else %}review{% endif %}" style="text-decoration:none;cursor:pointer;">Set C ({{ set_c_count }})</a>
+                <a href="/validation?set=all" class="badge {% if selected_set == 'ALL' %}pass{% else %}review{% endif %}" style="text-decoration:none;cursor:pointer;">All</a>
+            </div>
+        </section>
+
+        <section aria-label="Summary metrics">
+            <h3 class="section-heading">Summary</h3>
+            <div class="val-grid" style="margin-bottom:16px;">
+                <div class="val-stat"><div class="n">{{ summary.get('total_tests', 0) }}</div><div class="l">Total Tests</div></div>
+                <div class="val-stat pass"><div class="n">{{ summary.get('passed', 0) }}</div><div class="l">Passed</div></div>
+                <div class="val-stat fail"><div class="n">{{ summary.get('failed', 0) }}</div><div class="l">Failed</div></div>
+                <div class="val-stat review"><div class="n">{{ summary.get('needs_review', 0) }}</div><div class="l">Needs Review</div></div>
+                <div class="val-stat pass"><div class="n">{{ summary.get('correct_auto_decision', 0) }}</div><div class="l">Correct Auto</div></div>
+                <div class="val-stat review"><div class="n">{{ summary.get('correct_needs_review', 0) }}</div><div class="l">Correct Review</div></div>
+                <div class="val-stat fail"><div class="n">{{ summary.get('wrong_auto_decision', 0) }}</div><div class="l">Wrong Auto</div></div>
+                <div class="val-stat warn"><div class="n">{{ summary.get('pass_rate', 0) }}%</div><div class="l">Pass Rate</div></div>
+                <div class="val-stat warn"><div class="n">{{ summary.get('wrong_auto_rate', 0) }}%</div><div class="l">Wrong Auto Rate</div></div>
+                <div class="val-stat"><div class="n">{{ summary.get('conflict_blocked', 0) }}</div><div class="l">Conflict Blocked</div></div>
+                <div class="val-stat"><div class="n">{{ summary.get('false_review', 0) }}</div><div class="l">False Review</div></div>
+                <div class="val-stat"><div class="n">{{ summary.get('missing_extraction', 0) }}</div><div class="l">Missing Extraction</div></div>
+            </div>
+            <p class="hint">{{ config_total }} configured cases &middot; {{ logic_cases }} logic cases &middot; {{ ocr_capable }} OCR-capable &middot; {{ variant_count }} variants</p>
+        </section>
+
+        <section aria-label="Run all cases">
+            <div style="margin-bottom:20px;">
+                <button class="btn-run-all" onclick="runAll()" style="padding:8px 16px;background:#1a7f37;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Run All ({{ selected_set }})</button>
+                <span id="runAllStatus" class="hint" style="margin-left:8px;"></span>
+            </div>
+        </section>
+
+        <section aria-label="Test cases">
+            <h3 class="section-heading">Cases</h3>
+            {% for case in cases %}
+            {% set v = verdicts.get(case.case_id, {}) %}
+            {% set status_class = v.get('status', '')|lower if v.get('status') else '' %}
+            <div class="val-section" id="case-{{ case.case_id|replace(' ', '-') }}">
+                <div class="val-head" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                    <div>
+                        <h3 style="margin:0;">{{ case.case_id }} &mdash; {{ case.title }}</h3>
+                        <p class="val-sub">{{ case.role_text }} | {{ case.hub_text }} | {{ case.salary_text }} &middot; <span class="mono">{{ case.tag }}</span>{% if case.ocr_capable %} &middot; OCR{% endif %}</p>
+                    </div>
+                    <div class="row-actions">
+                        {% if status_class %}
+                        <span class="badge {{ status_class }}">{{ v.get('status', '') }}</span>
+                        {% endif %}
+                        <button onclick="runCase('{{ case.case_id }}', '{{ selected_set }}')" style="padding:4px 10px;background:#0969da;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Run</button>
+                        <button onclick="toggleDetail('{{ case.case_id }}')" style="padding:4px 10px;background:#e2e6ea;color:#333;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Details</button>
+                    </div>
+                </div>
+
+                {% if case.notes %}
+                <p class="hint" style="margin:4px 0 0;">{{ case.notes }}</p>
+                {% endif %}
+
+                <div class="detail-panel" id="detail-{{ case.case_id|replace(' ', '-') }}">
+                    {% if v %}
+                    <p class="hint"><strong>Scenario:</strong></p>
+                    <div class="scenario mono" style="margin-bottom:8px;background:#fff;padding:6px;border-radius:4px;">
+Role: {{ v.get('scenario', {}).get('role_text', '') }}<br>
+Hub: {{ v.get('scenario', {}).get('hub_text', '') }}<br>
+Salary: {{ v.get('scenario', {}).get('salary_text', '') }}
+                    </div>
+
+                    {% if v.get('field_results') %}
+                    <p class="hint"><strong>Field Results:</strong></p>
+                    {% for fr in v.get('field_results', []) %}
+                    <div class="field-line">
+                        <strong>{{ fr.get('field', '') }}:</strong>
+                        Expected <span class="mono">{{ fr.get('expected', '') }}</span> &rarr;
+                        Actual <span class="mono">{{ fr.get('actual', '') }}</span>
+                        {% if fr.get('result') == 'PASS' %}
+                        <span class="r-pass">PASS</span>
+                        {% elif fr.get('result') == 'FAIL' %}
+                        <span class="r-fail">FAIL</span>
+                        {% else %}
+                        <span class="r-skip">SKIP</span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+
+                    {% if v.get('failed_fields') %}
+                    <p class="hint"><strong>Failures:</strong></p>
+                    {% for ff in v.get('failed_fields', []) %}
+                    <div class="field-line">
+                        <span class="r-fail">{{ ff.get('field', '') }}:</span>
+                        expected <span class="mono">{{ ff.get('expected', '') }}</span>,
+                        got <span class="mono">{{ ff.get('actual', '') }}</span>
+                        {% if ff.get('note') %}<span class="hint"> ({{ ff.get('note') }})</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                    {% endif %}
+
+                    <div class="field-line" style="margin-top:6px;">
+                        <span class="hint">Safety:</span>
+                        {% set s = v.get('safety', {}) %}
+                        {% if s.get('correct_auto') %}<span class="r-pass">Correct Auto</span>{% endif %}
+                        {% if s.get('correct_review') %}<span class="r-pass">Correct Review</span>{% endif %}
+                        {% if s.get('wrong_auto_decision') %}<span class="r-fail">Wrong Auto Decision</span>{% endif %}
+                        {% if s.get('false_review') %}<span class="r-fail">False Review</span>{% endif %}
+                        {% if s.get('missing_extraction') %}<span class="r-skip">Missing Extraction</span>{% endif %}
+                    </div>
+                    {% else %}
+                    <p class="hint">No verdict yet. Click Run to test this case.</p>
+                    {% endif %}
+
+                    <div id="live-{{ case.case_id|replace(' ', '-') }}" style="margin-top:6px;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </section>
+
+        {% if history %}
+        <section aria-label="Validation history" style="margin-top:28px;">
+            <h3 class="section-heading">History (last 60 runs)</h3>
+            <div style="overflow-x:auto;">
+            <table class="val-table">
+                <thead>
+                    <tr>
+                        <th>Case ID</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th>Run At</th>
+                        <th>Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in history %}
+                    <tr>
+                        <td class="mono">{{ h.get('case_id', '') }}</td>
+                        <td>{{ h.get('test_type', '') }}</td>
+                        <td><span class="badge {{ h.get('status', '')|lower }}">{{ h.get('status', '') }}</span></td>
+                        <td class="mono">{{ h.get('validated_at', '') }}</td>
+                        <td class="hint">{{ h.get('notes', '') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </section>
+        {% endif %}
+    </main>
+
+    {% include 'partials/_toast.html' %}
+
+    <script>
+    function escapeHtml(s) {
+        if (!s) return '';
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(s));
+        return d.innerHTML;
+    }
+
+    function toggleDetail(caseId) {
+        var id = 'detail-' + caseId.replace(/ /g, '-');
+        var el = document.getElementById(id);
+        if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function runCase(caseId, setName) {
+        var detailId = 'detail-' + caseId.replace(/ /g, '-');
+        var detailEl = document.getElementById(detailId);
+        if (detailEl) detailEl.style.display = 'block';
+        var liveId = 'live-' + caseId.replace(/ /g, '-');
+        var liveEl = document.getElementById(liveId);
+        if (liveEl) liveEl.innerHTML = '<span class="hint">Running&hellip;</span>';
+
+        fetch('/api/validation/run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({case_id: caseId, set_name: setName})
+        }).then(function(r) { return r.json(); }).then(function(v) {
+            if (v.error) {
+                if (liveEl) liveEl.innerHTML = '<span class="r-fail">Error: ' + escapeHtml(v.error) + '</span>';
+                return;
+            }
+            var html = '<div style="margin-top:6px;">';
+            html += '<span class="badge ' + escapeHtml((v.status || '').toLowerCase()) + '">' + escapeHtml(v.status || '') + '</span>';
+            if (v.field_results) {
+                html += '<div style="margin-top:4px;">';
+                for (var i = 0; i < v.field_results.length; i++) {
+                    var fr = v.field_results[i];
+                    var cls = fr.result === 'PASS' ? 'r-pass' : (fr.result === 'FAIL' ? 'r-fail' : 'r-skip');
+                    html += '<div class="field-line"><strong>' + escapeHtml(fr.field) + ':</strong> ';
+                    html += '<span class="mono">' + escapeHtml(String(fr.expected)) + '</span> &rarr; ';
+                    html += '<span class="mono">' + escapeHtml(String(fr.actual)) + '</span> ';
+                    html += '<span class="' + cls + '">' + escapeHtml(fr.result) + '</span></div>';
+                }
+                html += '</div>';
+            }
+            if (v.failed_fields && v.failed_fields.length) {
+                html += '<div style="margin-top:4px;">';
+                for (var j = 0; j < v.failed_fields.length; j++) {
+                    var ff = v.failed_fields[j];
+                    html += '<div class="field-line"><span class="r-fail">' + escapeHtml(ff.field) + ':</span> ';
+                    html += 'expected <span class="mono">' + escapeHtml(String(ff.expected)) + '</span>, ';
+                    html += 'got <span class="mono">' + escapeHtml(String(ff.actual)) + '</span></div>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+            if (liveEl) liveEl.innerHTML = html;
+        }).catch(function(e) {
+            if (liveEl) liveEl.innerHTML = '<span class="r-fail">Request failed</span>';
+        });
+    }
+
+    function runAll() {
+        var statusEl = document.getElementById('runAllStatus');
+        if (statusEl) statusEl.textContent = 'Running all cases\u2026';
+        fetch('/api/validation/run-all', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({set_name: '{{ selected_set }}'})
+        }).then(function(r) { return r.json(); }).then(function() {
+            if (statusEl) statusEl.textContent = 'Done. Reloading\u2026';
+            window.location.reload();
+        }).catch(function() {
+            if (statusEl) statusEl.textContent = 'Request failed.';
+        });
+    }
+    </script>
+</body>
+</html>

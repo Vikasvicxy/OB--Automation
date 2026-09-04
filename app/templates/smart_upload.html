@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Upload - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/smart_upload.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <h1 class="page-title">Smart Upload</h1>
+                <p class="page-subtitle">Upload screenshots/Aadhaar/PDF &mdash; extract candidate details for review</p>
+            </div>
+        </header>
+
+        <!-- ── Upload Zone ────────────────────────────────────────────────── -->
+        <section id="uploadSection">
+            <div class="smart-upload-zone" id="uploadZone" role="button" tabindex="0" aria-label="Upload documents">
+                <div class="smart-upload-icon">&#8682;</div>
+                <h2>Drop files here or click to browse</h2>
+                <p class="smart-upload-supported">Accepts .png, .jpg, .jpeg, .pdf &mdash; up to one candidate's documents at a time</p>
+                <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.pdf" style="display:none">
+            </div>
+
+            <div id="fileListSection" class="uploaded-section" style="display:none">
+                <div class="uploaded-files-header">
+                    <h3>Selected files <span id="fileCount"></span></h3>
+                    <div class="uploaded-files-actions">
+                        <button type="button" class="evidence-toggle" id="btnClearFiles">Clear all</button>
+                    </div>
+                </div>
+                <div class="uploaded-files-grid" id="fileGrid"></div>
+            </div>
+
+            <div id="extractNotice" class="smart-upload-disabled-notice" style="display:none">
+                <div class="notice-icon">&#9888;</div>
+                <div class="notice-body">
+                    <h3>Processing</h3>
+                    <p id="extractNoticeText">Running document intelligence&hellip;</p>
+                </div>
+            </div>
+
+            <div class="rf-actions" id="uploadActions" style="display:none">
+                <div class="rf-actions-spacer"></div>
+                <button type="button" class="btn btn-primary" id="btnExtract">Extract &amp; Review</button>
+            </div>
+        </section>
+
+        <!-- ── Review Screen ───────────────────────────────────────────────── -->
+        <section id="reviewSection" style="display:none">
+            <div class="smart-review-header">
+                <div>
+                    <h2 class="review-title">Review Extracted Fields</h2>
+                    <p class="review-subtitle">Edit any field below, then save as draft</p>
+                </div>
+                <button type="button" class="evidence-toggle" id="btnBackToUpload">&#8592; New upload</button>
+            </div>
+
+            <div id="fallbackBanner" class="fallback-banner" style="display:none">
+                <div class="fallback-icon">&#9888;</div>
+                <div class="fallback-body">
+                    <strong>Low-confidence extraction</strong>
+                    <p id="fallbackMsg">The system could not confidently read the document. Please fill in the fields manually.</p>
+                </div>
+            </div>
+
+            <div id="attentionBanner" class="attention-banner" style="display:none">
+                <strong>Attention needed:</strong>
+                <ul id="attentionList"></ul>
+            </div>
+
+            <div id="srcFilesBlock" class="src-files-block" style="display:none">
+                <div class="src-files-title">Source files</div>
+                <div class="src-files-list" id="srcFilesList"></div>
+            </div>
+
+            <div class="review-form-grid" id="reviewForm">
+                <!-- Name -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfName">Name</label>
+                    <input type="text" id="rfName" class="global-search" style="width:100%">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfName"></span>
+                        <span class="rf-source" id="srcName"></span>
+                        <button type="button" class="evidence-toggle" id="evName" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evNameDetail" style="display:none"></div>
+                </div>
+
+                <!-- Mobile -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfMobile">Mobile</label>
+                    <input type="text" id="rfMobile" class="global-search" style="width:100%">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfMobile"></span>
+                        <span class="rf-source" id="srcMobile"></span>
+                        <button type="button" class="evidence-toggle" id="evMobile" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evMobileDetail" style="display:none"></div>
+                </div>
+
+                <!-- DOB -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfDob">Date of Birth</label>
+                    <input type="text" id="rfDob" class="global-search" style="width:100%" placeholder="DD/MM/YYYY">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfDob"></span>
+                        <span class="rf-source" id="srcDob"></span>
+                        <button type="button" class="evidence-toggle" id="evDob" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evDobDetail" style="display:none"></div>
+                </div>
+
+                <!-- Facility -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfFacility">Facility / Hub</label>
+                    <input type="text" id="rfFacility" class="global-search" style="width:100%">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfFacility"></span>
+                        <span class="rf-source" id="srcFacility"></span>
+                        <button type="button" class="evidence-toggle" id="evFacility" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evFacilityDetail" style="display:none"></div>
+                </div>
+
+                <!-- Role / Designation -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfRole">Role / Designation</label>
+                    <input type="text" id="rfRole" class="global-search" style="width:100%">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfRole"></span>
+                        <span class="rf-source" id="srcRole"></span>
+                        <button type="button" class="evidence-toggle" id="evRole" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evRoleDetail" style="display:none"></div>
+                </div>
+
+                <!-- Salary -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfSalary">Salary</label>
+                    <input type="text" id="rfSalary" class="global-search" style="width:100%" placeholder="e.g. 15000">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfSalary"></span>
+                        <span class="rf-source" id="srcSalary"></span>
+                        <button type="button" class="evidence-toggle" id="evSalary" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evSalaryDetail" style="display:none"></div>
+                </div>
+
+                <!-- Cost Code -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfCostCode">Cost Code</label>
+                    <input type="text" id="rfCostCode" class="global-search" style="width:100%">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfCostCode"></span>
+                        <span class="rf-source" id="srcCostCode"></span>
+                    </div>
+                </div>
+
+                <!-- Facility Type -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfFacilityType">Facility Type</label>
+                    <input type="text" id="rfFacilityType" class="global-search" style="width:100%">
+                </div>
+
+                <!-- Aadhaar (masked, read-only) -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfAadhaar">Aadhaar (masked)</label>
+                    <input type="text" id="rfAadhaar" class="global-search" style="width:100%" readonly>
+                    <div class="rf-meta">
+                        <span class="badge-readonly">Auto-masked</span>
+                    </div>
+                </div>
+
+                <!-- Address (full-width) -->
+                <div class="rf-field rf-field-wide">
+                    <label class="rf-label" for="rfAddress">Address</label>
+                    <input type="text" id="rfAddress" class="global-search" style="width:100%">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfAddress"></span>
+                        <span class="rf-source" id="srcAddress"></span>
+                        <button type="button" class="evidence-toggle" id="evAddress" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evAddressDetail" style="display:none"></div>
+                </div>
+            </div>
+
+            <div class="rf-actions">
+                <button type="button" class="evidence-toggle" id="btnCancelReview">Cancel</button>
+                <div class="rf-actions-spacer"></div>
+                <button type="button" class="btn btn-primary" id="btnSaveDraft">Save Draft</button>
+            </div>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+
+    <script>
+    (function() {
+        /* ── DOM refs ──────────────────────────────────────────────────── */
+        var uploadZone = document.getElementById("uploadZone");
+        var fileInput  = document.getElementById("fileInput");
+        var fileListSection = document.getElementById("fileListSection");
+        var fileGrid   = document.getElementById("fileGrid");
+        var fileCount  = document.getElementById("fileCount");
+        var btnClear   = document.getElementById("btnClearFiles");
+        var btnExtract = document.getElementById("btnExtract");
+        var uploadActions = document.getElementById("uploadActions");
+        var extractNotice = document.getElementById("extractNotice");
+        var extractNoticeText = document.getElementById("extractNoticeText");
+        var uploadSection = document.getElementById("uploadSection");
+        var reviewSection = document.getElementById("reviewSection");
+
+        var files = [];
+        var extractionData = null;
+        var currentSessionId = null;
+
+        /* ── Upload zone events ─────────────────────────────────────────── */
+        uploadZone.addEventListener("click", function() { fileInput.click(); });
+        uploadZone.addEventListener("keydown", function(e) {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+        });
+
+        uploadZone.addEventListener("dragover", function(e) {
+            e.preventDefault(); uploadZone.classList.add("dragover");
+        });
+        uploadZone.addEventListener("dragleave", function() {
+            uploadZone.classList.remove("dragover");
+        });
+        uploadZone.addEventListener("drop", function(e) {
+            e.preventDefault(); uploadZone.classList.remove("dragover");
+            addFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener("change", function() {
+            addFiles(fileInput.files);
+            fileInput.value = "";
+        });
+
+        function addFiles(fileList) {
+            for (var i = 0; i < fileList.length; i++) {
+                var f = fileList[i];
+                var ext = (f.name || "").split(".").pop().toLowerCase();
+                if (["png","jpg","jpeg","pdf"].indexOf(ext) === -1) {
+                    if (typeof showToast === "function") showToast("Only .png, .jpg, .jpeg, .pdf allowed", "warning");
+                    continue;
+                }
+                files.push(f);
+            }
+            renderFileGrid();
+        }
+
+        function renderFileGrid() {
+            if (!files.length) {
+                fileListSection.style.display = "none";
+                uploadActions.style.display = "none";
+                return;
+            }
+            fileListSection.style.display = "";
+            uploadActions.style.display = "";
+            fileCount.textContent = "(" + files.length + ")";
+            fileGrid.innerHTML = "";
+            for (var i = 0; i < files.length; i++) {
+                (function(idx) {
+                    var f = files[idx];
+                    var ext = (f.name || "").split(".").pop().toLowerCase();
+                    var isPdf = ext === "pdf";
+                    var card = document.createElement("div");
+                    card.className = "uploaded-file-card";
+
+                    var thumb = document.createElement("div");
+                    thumb.className = "uploaded-file-thumb";
+                    if (!isPdf && f.type && f.type.indexOf("image") !== -1) {
+                        var img = document.createElement("img");
+                        img.src = URL.createObjectURL(f);
+                        img.alt = f.name;
+                        thumb.appendChild(img);
+                    } else {
+                        thumb.textContent = isPdf ? "PDF" : ext.toUpperCase();
+                    }
+
+                    var info = document.createElement("div");
+                    info.className = "uploaded-file-info";
+                    var nameEl = document.createElement("div");
+                    nameEl.className = "uploaded-file-name";
+                    nameEl.textContent = f.name;
+                    var meta = document.createElement("div");
+                    meta.className = "uploaded-file-meta";
+                    var sz = f.size > 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : (f.size / 1024).toFixed(0) + " KB";
+                    meta.textContent = sz + " &middot; " + (isPdf ? "PDF" : "Image");
+
+                    var rm = document.createElement("button");
+                    rm.type = "button";
+                    rm.className = "uploaded-file-remove";
+                    rm.textContent = "Remove";
+                    rm.addEventListener("click", function() {
+                        files.splice(idx, 1);
+                        renderFileGrid();
+                    });
+
+                    info.appendChild(nameEl);
+                    info.appendChild(meta);
+                    card.appendChild(thumb);
+                    card.appendChild(info);
+                    card.appendChild(rm);
+                    fileGrid.appendChild(card);
+                })(i);
+            }
+        }
+
+        btnClear.addEventListener("click", function() {
+            files = [];
+            renderFileGrid();
+        });
+
+        /* ── Extract button ─────────────────────────────────────────────── */
+        btnExtract.addEventListener("click", function() {
+            if (!files.length) return;
+            var fd = new FormData();
+            for (var i = 0; i < files.length; i++) {
+                fd.append("files", files[i], files[i].name);
+            }
+            extractNotice.style.display = "";
+            extractNoticeText.textContent = "Running document intelligence\u2026";
+            btnExtract.disabled = true;
+
+            fetch("/api/smart-extract", { method: "POST", body: fd })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    extractNotice.style.display = "none";
+                    btnExtract.disabled = false;
+                    if (data.error) {
+                        if (typeof showToast === "function") showToast(data.error, "error");
+                        return;
+                    }
+                    extractionData = data;
+                    currentSessionId = data.session_id || null;
+                    showReview(data);
+                })
+                .catch(function(err) {
+                    extractNotice.style.display = "none";
+                    btnExtract.disabled = false;
+                    if (typeof showToast === "function") showToast("Extraction failed: " + err, "error");
+                });
+        });
+
+        /* ── Review screen ──────────────────────────────────────────────── */
+        function showReview(data) {
+            uploadSection.style.display = "none";
+            reviewSection.style.display = "";
+
+            if (data.fallback) {
+                document.getElementById("fallbackBanner").style.display = "";
+            } else {
+                document.getElementById("fallbackBanner").style.display = "none";
+            }
+
+            var attn = data.needs_attention || [];
+            if (attn.length) {
+                var ab = document.getElementById("attentionBanner");
+                var al = document.getElementById("attentionList");
+                ab.style.display = "";
+                al.innerHTML = "";
+                for (var a = 0; a < attn.length; a++) {
+                    var li = document.createElement("li");
+                    li.textContent = attn[a];
+                    al.appendChild(li);
+                }
+            } else {
+                document.getElementById("attentionBanner").style.display = "none";
+            }
+
+            var sf = data.source_files || [];
+            if (sf.length) {
+                var sfb = document.getElementById("srcFilesBlock");
+                var sfl = document.getElementById("srcFilesList");
+                sfb.style.display = "";
+                sfl.innerHTML = "";
+                for (var s = 0; s < sf.length; s++) {
+                    var chip = document.createElement("span");
+                    chip.className = "src-file-chip";
+                    chip.textContent = sf[s].filename || ("file " + (s + 1));
+                    sfl.appendChild(chip);
+                }
+            } else {
+                document.getElementById("srcFilesBlock").style.display = "none";
+            }
+
+            setField("rfName", data.name);
+            setField("rfMobile", data.mobile);
+            setField("rfDob", data.dob);
+            setField("rfFacility", data.facility);
+            setField("rfRole", data.role);
+            setField("rfSalaryDisplay", data.salary);
+            setField("rfCostCode", data.cost_code);
+            setField("rfAddress", data.address);
+
+            document.getElementById("rfAadhaar").value = data.aadhaar_masked || "XXXX XXXX ?";
+
+            var ft = data.facility_type || "";
+            document.getElementById("rfFacilityType").value = ft;
+
+            if (data.salary && data.salary.display) {
+                document.getElementById("rfSalary").value = data.salary.display;
+            } else if (data.salary && data.salary.value != null) {
+                document.getElementById("rfSalary").value = String(data.salary.value);
+            } else {
+                document.getElementById("rfSalary").value = "";
+            }
+
+            if (data.entity) {
+                document.getElementById("rfCostCode").setAttribute("data-entity", data.entity);
+            }
+
+            attachEvidence("evName", "evNameDetail", data.evidence, "name");
+            attachEvidence("evMobile", "evMobileDetail", data.evidence, "mobile");
+            attachEvidence("evDob", "evDobDetail", data.evidence, "dob");
+            attachEvidence("evFacility", "evFacilityDetail", data.evidence, "facility");
+            attachEvidence("evRole", "evRoleDetail", data.evidence, "role");
+            attachEvidence("evSalary", "evSalaryDetail", data.evidence, "salary");
+            attachEvidence("evAddress", "evAddressDetail", data.evidence, "address");
+
+            reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+
+        function setField(inputId, field) {
+            var input = document.getElementById(inputId);
+            var cfBadge = document.getElementById("cf" + inputId.replace("rf", ""));
+            var srcEl = document.getElementById("src" + inputId.replace("rf", ""));
+
+            if (!field || typeof field !== "object") {
+                input.value = field || "";
+                if (cfBadge) { cfBadge.textContent = ""; cfBadge.className = "cf-badge"; }
+                if (srcEl) { srcEl.textContent = ""; }
+                return;
+            }
+
+            input.value = field.value || "";
+
+            var conf = (field.confidence || "").toLowerCase();
+            if (cfBadge) {
+                cfBadge.textContent = field.confidence || "";
+                if (conf === "high") cfBadge.className = "cf-badge cf-high";
+                else if (conf === "review") cfBadge.className = "cf-badge cf-review";
+                else cfBadge.className = "cf-badge cf-missing";
+            }
+            if (srcEl) {
+                srcEl.textContent = field.source ? ("Source: " + field.source) : "";
+            }
+        }
+
+        function attachEvidence(toggleId, detailId, evidence, fieldKey) {
+            var toggle = document.getElementById(toggleId);
+            var detail = document.getElementById(detailId);
+            if (!toggle || !detail) return;
+            var ev = evidence ? evidence[fieldKey] : null;
+            if (!ev || !ev.reasons || !ev.reasons.length) {
+                toggle.style.display = "none";
+                return;
+            }
+            toggle.style.display = "";
+            toggle.onclick = function() {
+                var open = detail.style.display !== "none";
+                detail.style.display = open ? "none" : "";
+                toggle.textContent = open ? "Why?" : "Hide";
+                if (!open && !detail.hasChildNodes()) {
+                    var card = document.createElement("div");
+                    card.className = "evidence-card";
+                    var hdr = document.createElement("div");
+                    hdr.className = "evidence-header";
+                    var confSpan = document.createElement("span");
+                    confSpan.className = "evidence-conf";
+                    confSpan.textContent = ev.confidence || "";
+                    hdr.appendChild(confSpan);
+                    if (ev.score != null) {
+                        var sc = document.createElement("span");
+                        sc.className = "evidence-score";
+                        sc.textContent = "Score: " + ev.score;
+                        hdr.appendChild(sc);
+                    }
+                    card.appendChild(hdr);
+                    var ul = document.createElement("ul");
+                    ul.className = "evidence-reasons";
+                    for (var r = 0; r < ev.reasons.length; r++) {
+                        var li = document.createElement("li");
+                        li.className = "evidence-reason-pos";
+                        li.textContent = ev.reasons[r];
+                        ul.appendChild(li);
+                    }
+                    card.appendChild(ul);
+                    if (ev.runner_up) {
+                        var ru = document.createElement("div");
+                        ru.className = "evidence-runner";
+                        ru.textContent = "Runner-up: " + ev.runner_up + (ev.runner_up_score != null ? " (score " + ev.runner_up_score + ")" : "");
+                        card.appendChild(ru);
+                    }
+                    detail.appendChild(card);
+                }
+            };
+        }
+
+        /* ── Back / Cancel ──────────────────────────────────────────────── */
+        function backToUpload() {
+            reviewSection.style.display = "none";
+            uploadSection.style.display = "";
+            extractionData = null;
+            currentSessionId = null;
+        }
+        document.getElementById("btnBackToUpload").addEventListener("click", backToUpload);
+        document.getElementById("btnCancelReview").addEventListener("click", backToUpload);
+
+        /* ── Save Draft ─────────────────────────────────────────────────── */
+        document.getElementById("btnSaveDraft").addEventListener("click", function() {
+            var d = extractionData || {};
+            var payload = {
+                name: document.getElementById("rfName").value.trim(),
+                mobile: document.getElementById("rfMobile").value.trim(),
+                dob: document.getElementById("rfDob").value.trim(),
+                address: document.getElementById("rfAddress").value.trim(),
+                facility: document.getElementById("rfFacility").value.trim(),
+                facility_name: document.getElementById("rfFacility").value.trim(),
+                role: document.getElementById("rfRole").value.trim(),
+                designation: document.getElementById("rfRole").value.trim(),
+                salary_normalized: document.getElementById("rfSalary").value.trim(),
+                salary_display: document.getElementById("rfSalary").value.trim(),
+                cost_code: document.getElementById("rfCostCode").value.trim(),
+                entity: (d.entity || document.getElementById("rfCostCode").getAttribute("data-entity") || ""),
+                operation: d.operation || "",
+                team: d.team || "",
+                facility_type: document.getElementById("rfFacilityType").value.trim(),
+                aadhaar_number: d.aadhaar_number || "",
+                batch_id: d.batch_id || 1,
+                candidate_number: d.candidate_number || 1,
+                source_files: (d.source_files || []).map(function(f) { return f.filename; }),
+                aadhaar_filename: ""
+            };
+
+            var sf = d.source_files || [];
+            for (var i = 0; i < sf.length; i++) {
+                var fn = (sf[i].filename || "").toLowerCase();
+                if (fn.indexOf("aadhaar") !== -1 || fn.indexOf("aadhar") !== -1 || fn.indexOf("uid") !== -1) {
+                    payload.aadhaar_filename = sf[i].filename;
+                    break;
+                }
+            }
+
+            var btn = document.getElementById("btnSaveDraft");
+            btn.disabled = true;
+            btn.textContent = "Saving\u2026";
+
+            fetch("/api/save-draft", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                btn.disabled = false;
+                btn.textContent = "Save Draft";
+                if (res.error) {
+                    if (typeof showToast === "function") showToast("Save failed: " + res.error, "error");
+                    return;
+                }
+                if (typeof showToast === "function") showToast("Draft saved (ID " + res.id + ")", "success");
+                backToUpload();
+                files = [];
+                renderFileGrid();
+            })
+            .catch(function(err) {
+                btn.disabled = false;
+                btn.textContent = "Save Draft";
+                if (typeof showToast === "function") showToast("Save failed: " + err, "error");
+            });
+        });
+    })();
+    </script>
+</body>
+</html>

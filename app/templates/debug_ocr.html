@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Debug View - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body { font-family: sans-serif; margin: 20px; background: #f5f5f5; }
+        .debug-header { background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 12px; margin-bottom: 20px; }
+        .debug-header h2 { margin: 0 0 4px; color: #856404; }
+        .debug-header p { margin: 0; font-size: 0.9rem; color: #856404; }
+        .upload-area { background: #fff; border: 2px dashed #ccc; border-radius: 8px; padding: 40px; text-align: center; margin-bottom: 20px; cursor: pointer; }
+        .upload-area:hover { border-color: #3399ff; }
+        .result-area { display: flex; gap: 20px; flex-wrap: wrap; }
+        .result-image { flex: 1; min-width: 300px; }
+        .result-image img { max-width: 100%; border: 1px solid #ddd; border-radius: 4px; }
+        .result-evidence { flex: 1; min-width: 300px; background: #fff; border-radius: 8px; padding: 16px; }
+        .ev-field { margin-bottom: 12px; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px; }
+        .ev-field h4 { margin: 0 0 4px; }
+        .ev-field .score { color: #666; font-size: 0.85rem; }
+        .ev-field ul { margin: 4px 0; padding-left: 16px; font-size: 0.85rem; }
+        .ev-field .rejected { color: #cc3333; }
+        .ev-field .selected { color: #15803d; font-weight: 600; }
+        #debugFileInput { display: none; }
+    </style>
+</head>
+<body>
+    <h1>OCR Debug View</h1>
+    <div class="debug-header">
+        <h2>Development Only</h2>
+        <p>This view is for local debugging only. Enable with OCR_DEBUG_VIEW=true. No images are saved permanently.</p>
+    </div>
+
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('debugFileInput').click()">
+        <p>Click to upload an image for OCR debug analysis</p>
+        <input type="file" id="debugFileInput" accept=".jpg,.jpeg,.png,.pdf">
+    </div>
+
+    <div class="result-area" id="resultArea" style="display:none">
+        <div class="result-image">
+            <h3>Annotated Image</h3>
+            <img id="annotatedImg" src="" alt="Annotated OCR debug view">
+        </div>
+        <div class="result-evidence">
+            <h3>Evidence Scoring</h3>
+            <div id="evidenceList"></div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        var fileInput = document.getElementById("debugFileInput");
+        var resultArea = document.getElementById("resultArea");
+        var annotatedImg = document.getElementById("annotatedImg");
+        var evidenceList = document.getElementById("evidenceList");
+
+        fileInput.addEventListener("change", function() {
+            if (!fileInput.files.length) return;
+            var fd = new FormData();
+            fd.append("file", fileInput.files[0], fileInput.files[0].name);
+
+            fetch("/api/debug/ocr-annotate", { method: "POST", body: fd })
+                .then(function(r) { return r.json(); })
+                .then(function(res) {
+                    if (res.error) {
+                        alert("Error: " + res.error);
+                        return;
+                    }
+                    if (res.overlay) {
+                        annotatedImg.src = res.overlay;
+                    }
+                    renderEvidence(res.evidence || {});
+                    resultArea.style.display = "";
+                })
+                .catch(function(err) {
+                    alert("Request failed: " + err);
+                });
+        });
+
+        function renderEvidence(ev) {
+            evidenceList.innerHTML = "";
+            var fields = ["name", "dob", "aadhaar_number", "address", "facility", "role", "salary"];
+            fields.forEach(function(f) {
+                var data = ev[f];
+                if (!data) return;
+                var div = document.createElement("div");
+                div.className = "ev-field";
+                var confClass = (data.confidence || "missing").toLowerCase();
+                div.innerHTML = "<h4>" + f.toUpperCase() + ' <span class="cf-badge cf-' + confClass + '">' + data.confidence + "</span></h4>"
+                    + '<div class="score">Score: ' + (data.selected_score || 0) + " | Margin: " + (data.margin || 0)
+                    + " | Candidates: " + (data.candidate_count || 0) + "</div>";
+                if (data.selected_reasons && data.selected_reasons.length) {
+                    var ul = document.createElement("ul");
+                    data.selected_reasons.forEach(function(r) {
+                        var li = document.createElement("li");
+                        li.className = "selected";
+                        li.textContent = r;
+                        ul.appendChild(li);
+                    });
+                    div.appendChild(ul);
+                }
+                if (data.runner_up_value) {
+                    var ru = document.createElement("div");
+                    ru.className = "score";
+                    ru.textContent = "Runner-up: " + data.runner_up_value + " (score " + (data.runner_up_score || 0) + ")";
+                    div.appendChild(ru);
+                }
+                evidenceList.appendChild(div);
+            });
+        }
+    })();
+    </script>
+</body>
+</html>

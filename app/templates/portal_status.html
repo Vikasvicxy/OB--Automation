@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal Status - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> eSampark Portal</div>
+                <h1 class="page-title">eSampark Portal</h1>
+                <p class="page-subtitle">Upload status for batch {{ batch_id }}</p>
+            </div>
+        </header>
+
+        <section aria-label="Batch navigation">
+            <div class="action-cards" style="display:flex;align-items:center;gap:1rem;">
+                <a href="/portal?batch_id={{ (batch_id | int) - 1 }}" class="btn btn-outline {% if (batch_id | int) <= 1 %}btn-disabled{% endif %}" {% if (batch_id | int) <= 1 %}tabindex="-1" aria-disabled="true"{% endif %}>&#8249; Prev Batch</a>
+                <strong>Batch {{ batch_id }}</strong>
+                <a href="/portal?batch_id={{ (batch_id | int) + 1 }}" class="btn btn-outline">Next Batch &#8250;</a>
+            </div>
+        </section>
+
+        <section aria-label="Summary indicators">
+            <h3 class="section-heading">Batch Summary</h3>
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-count">{{ summary.total | default(0) }}</div>
+                    <div class="kpi-label">Total Candidates</div>
+                    <div class="kpi-desc">In batch {{ batch_id }}</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ summary.portal_uploaded | default(0) }}</div>
+                    <div class="kpi-label">Portal Uploaded</div>
+                    <div class="kpi-desc">Successfully uploaded</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-fail">{{ summary.failed | default(0) }}</div>
+                    <div class="kpi-label">Failed</div>
+                    <div class="kpi-desc">Requires attention</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-generated">{{ summary.pending | default(0) }}</div>
+                    <div class="kpi-label">Pending</div>
+                    <div class="kpi-desc">Awaiting upload</div>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Portal configuration">
+            <h3 class="section-heading">Portal Configuration</h3>
+            <div class="settings-grid">
+                <div class="settings-card">
+                    <div class="settings-card-title">Credentials</div>
+                    <div class="settings-card-status {% if credentials_configured %}configured{% else %}not-configured{% endif %}">
+                        {% if credentials_configured %}
+                            <span class="status-badge status-ready">Configured</span>
+                        {% else %}
+                            <span class="status-badge status-fail">Not Configured</span>
+                        {% endif %}
+                    </div>
+                    <p class="settings-card-desc">eSampark login credentials for automated uploads.</p>
+                </div>
+                <div class="settings-card">
+                    <div class="settings-card-title">Portal Status</div>
+                    <div class="settings-card-status">
+                        <span class="status-badge">{{ portal_status.status | default('Unknown') }}</span>
+                    </div>
+                    <p class="settings-card-desc">Current connection state of the eSampark automation session.</p>
+                </div>
+                <div class="settings-card">
+                    <div class="settings-card-title">Session Saved</div>
+                    <div class="settings-card-status">
+                        {% if portal_status.session_saved | default(false) %}
+                            <span class="status-badge status-ready">Yes</span>
+                        {% else %}
+                            <span class="status-badge">No</span>
+                        {% endif %}
+                    </div>
+                    <p class="settings-card-desc">Whether a reusable browser session is cached.</p>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Failed candidates">
+            <h3 class="section-heading">Failed Candidates</h3>
+            {% if summary.failed_rows | default([]) | length > 0 %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Candidate ID</th>
+                        <th>Name</th>
+                        <th>Mobile</th>
+                        <th>Remarks</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in summary.failed_rows %}
+                    <tr>
+                        <td>#{{ row.candidate_id }}</td>
+                        <td>{{ row.name | default('—') }}</td>
+                        <td>{{ row.mobile | default('—') }}</td>
+                        <td>{{ row.creation_remarks | default('—') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#10003;</span> No failed candidates in this batch.</div>
+            {% endif %}
+        </section>
+
+        <section aria-label="Generated files">
+            <h3 class="section-heading">Generated Files</h3>
+            {% if files | default([]) | length > 0 %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Batch</th>
+                        <th>Created</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for f in files %}
+                    <tr>
+                        <td>{{ f.filename | default('—') }}</td>
+                        <td>{{ f.batch_id | default('—') }}</td>
+                        <td>{{ f.created_at | default('—') }}</td>
+                        <td>
+                            <span class="status-badge status-{{ 'ready' if (f.generation_status | default('')) in ('generated','success') else 'fail' }}">
+                                {{ f.generation_status | default('—') }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128196;</span> No generated files for this batch.</div>
+            {% endif %}
+        </section>
+
+        <section aria-label="Portal uploads">
+            <h3 class="section-heading">Portal Uploads</h3>
+            {% if uploads | default([]) | length > 0 %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Upload ID</th>
+                        <th>File</th>
+                        <th>Batch</th>
+                        <th>Status</th>
+                        <th>Started</th>
+                        <th>Completed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in uploads %}
+                    <tr>
+                        <td>#{{ u.portal_upload_id | default('—') }}</td>
+                        <td>{{ u.filename | default('—') }}</td>
+                        <td>{{ u.batch_id | default('—') }}</td>
+                        <td>
+                            <span class="status-badge status-{{ 'ready' if (u.portal_status | default('')) == 'Success' else ('fail' if (u.portal_status | default('')) in ('Failed','Partial Failure','Unknown') else '') }}">
+                                {{ u.portal_status | default('—') }}
+                            </span>
+                        </td>
+                        <td>{{ u.started_at | default('—') }}</td>
+                        <td>{{ u.completed_at | default('—') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128194;</span> No portal uploads for this batch.</div>
+            {% endif %}
+        </section>
+
+        <section aria-label="Audit trail">
+            <h3 class="section-heading">Audit Trail</h3>
+            {% if audit | default([]) | length > 0 %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Event</th>
+                        <th>Status</th>
+                        <th>Detail</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in audit %}
+                    <tr>
+                        <td>#{{ a.audit_id | default('—') }}</td>
+                        <td>{{ a.event | default('—') }}</td>
+                        <td>
+                            <span class="status-badge status-{{ 'fail' if (a.status | default('')) == 'error' else 'ready' }}">
+                                {{ a.status | default('—') }}
+                            </span>
+                        </td>
+                        <td>{{ a.detail | default('—') }}</td>
+                        <td>{{ a.occurred_at | default('—') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128220;</span> No audit records yet.</div>
+            {% endif %}
+        </section>
+
+    </main>
+
+    {% include 'partials/_toast.html' %}
+</body>
+</html>

@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Candidate - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+    <style>
+        .manual-entry-wrap { max-width: 720px; }
+        .btn-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+        .btn-row .spacer { flex: 1; }
+        .dup-details { display: grid; grid-template-columns: 1fr 2fr; gap: 6px 16px; text-align: left; margin-bottom: 20px; }
+        .modal-box { text-align: left; }
+        .modal-actions { justify-content: flex-start; }
+    </style>
+</head>
+<body>
+    {% set nav_active = 'manual_entry' %}
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+
+        <header class="topbar">
+            <div>
+                {% if edit_candidate %}
+                <h1 class="page-title" id="pageTitle">Edit Candidate</h1>
+                <p class="page-subtitle" id="pageSubtitle">Editing existing candidate. Changes will update the existing record.</p>
+                {% else %}
+                <h1 class="page-title" id="pageTitle">New Candidate</h1>
+                <p class="page-subtitle" id="pageSubtitle">TeamHR Automation &mdash; Manual Entry</p>
+                {% endif %}
+            </div>
+        </header>
+
+        <div id="recoveryBanner" class="recovery-banner" style="display:none;">
+            <span class="recovery-icon" aria-hidden="true">&#9888;</span>
+            <span class="recovery-text">You have an unsaved candidate draft. Would you like to restore it?</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnRecover">Restore Draft</button>
+            <button type="button" class="btn btn-outline btn-sm" id="btnDiscard">Discard</button>
+        </div>
+
+        <nav id="candidateNavBar" class="candidate-nav-bar" aria-label="Candidates in batch">
+            <div class="nav-bar-left">
+                <span class="nav-bar-label">Batch Candidates</span>
+                <span class="nav-bar-circles-scope">(<span id="navBarCount">0</span>)</span>
+            </div>
+            <div id="navBarCircles" class="nav-bar-circles"></div>
+            <div class="nav-bar-right">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnBatchOverview" style="display:none;">Batch Overview</button>
+            </div>
+        </nav>
+
+        <form id="candidateForm" class="candidate-form" novalidate>
+
+            <section class="form-section" aria-label="Candidate details">
+                <div class="section-header">
+                    <div class="section-num">1</div>
+                    <div>
+                        <h2 class="section-title">Candidate Name</h2>
+                        <p class="section-desc">Enter the candidate's full name as it appears on official documents.</p>
+                    </div>
+                </div>
+                <div class="field-group">
+                    <label for="candidateNameInput">Candidate Name</label>
+                    <input type="text" id="candidateNameInput" class="form-input" placeholder="e.g. Rahul Kumar" autocomplete="off">
+                    <div class="field-hint" id="candidateNameHint">Upload Aadhaar to auto-detect name</div>
+                    <div class="field-error" id="candidateNameError" style="display:none;"></div>
+                </div>
+            </section>
+
+            <section class="form-section" aria-label="Aadhaar upload">
+                <div class="section-header">
+                    <div class="section-num">2</div>
+                    <div>
+                        <h2 class="section-title">Aadhaar Upload</h2>
+                        <p class="section-desc">Upload an Aadhaar file to auto-extract name, DOB, number, and address.</p>
+                    </div>
+                </div>
+
+                <div id="uploadZone" class="upload-zone" role="button" tabindex="0" aria-label="Upload Aadhaar file">
+                    <input type="file" id="aadhaarFile" accept=".jpg,.jpeg,.png,.pdf" style="display:none;">
+                    <div class="upload-zone-icon" aria-hidden="true">&#8682;</div>
+                    <div class="upload-zone-text">Drag &amp; drop or click to browse</div>
+                    <button type="button" class="btn btn-outline btn-sm" id="btnBrowse">Browse Files</button>
+                    <div class="upload-zone-hint">Supports JPG, PNG, PDF &mdash; max file size not enforced</div>
+                </div>
+
+                <div id="fileDisplay" class="file-display" style="display:none;">
+                    <span class="file-icon" aria-hidden="true">&#128196;</span>
+                    <span class="file-name" id="fileName"></span>
+                    <button type="button" class="file-remove" id="btnRemoveFile" title="Remove file" aria-label="Remove file">&#10005;</button>
+                </div>
+
+                <div id="ocrStatus" class="ocr-status" style="display:none;">
+                    <span class="ocr-status-text" id="ocrStatusText">Reading Aadhaar...</span>
+                </div>
+                <div class="field-note" id="ocrNote">Upload an Aadhaar file to auto-extract name, DOB, number, and address.</div>
+
+                <div class="auto-fields">
+                    <div class="auto-field">
+                        <span class="auto-label">Aadhaar Number</span>
+                        <input type="text" id="aadhaarNumber" class="form-input" autocomplete="off" placeholder="XXXX XXXX XXXX">
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label for="dobInput">Date of Birth</label>
+                    <input type="text" id="dobInput" class="form-input" autocomplete="off" placeholder="DD/MM/YYYY">
+                </div>
+
+                <div class="field-group">
+                    <label for="addressInput">Address</label>
+                    <textarea id="addressInput" class="form-input" rows="2" autocomplete="off" placeholder="Full address"></textarea>
+                </div>
+            </section>
+
+            <section class="form-section" aria-label="Contact details">
+                <div class="section-header">
+                    <div class="section-num">3</div>
+                    <div>
+                        <h2 class="section-title">Mobile Number</h2>
+                        <p class="section-desc">Enter a valid 10-digit Indian mobile number.</p>
+                    </div>
+                </div>
+                <div class="field-group">
+                    <label for="mobileInput">Mobile Number</label>
+                    <input type="tel" id="mobileInput" class="form-input" placeholder="e.g. 9876543210" autocomplete="off" maxlength="12">
+                    <div class="mobile-normalized" id="mobileNormalized" style="display:none;">Normalized: <strong id="mobileNormValue"></strong></div>
+                    <div class="field-error" id="mobileError" style="display:none;"></div>
+                </div>
+            </section>
+
+            <section class="form-section" aria-label="Role and assignment">
+                <div class="section-header">
+                    <div class="section-num">4</div>
+                    <div>
+                        <h2 class="section-title">Role &amp; Cost Code</h2>
+                        <p class="section-desc">Select a cost code, then the role and assignment details.</p>
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label for="costCodeSearch">Cost Code</label>
+                    <div id="costCodeDropdown" class="sd-container">
+                        <div class="sd-input-wrap">
+                            <input type="text" id="costCodeSearch" class="form-input sd-input" placeholder="Search cost code..." autocomplete="off">
+                            <button type="button" class="sd-clear" id="costCodeClear" title="Clear selection" aria-label="Clear cost code">&#215;</button>
+                            <button type="button" class="sd-arrow" id="costCodeArrow" title="Show all cost codes" aria-label="Show all cost codes">&#9662;</button>
+                        </div>
+                        <div id="costCodeList" class="sd-list"></div>
+                    </div>
+                    <input type="hidden" id="costCodeValue" name="cost_code">
+                    <div class="field-error" id="costCodeError" style="display:none;"></div>
+                </div>
+
+                <div id="derivedSummary" class="derived-summary" style="display:none;">
+                    <span class="derived-pill derived-pill-accent" id="derivedCC" aria-label="Cost code"></span>
+                    <span class="derived-sep" aria-hidden="true">&#8250;</span>
+                    <span class="derived-pill" id="derivedEntity" aria-label="Entity"></span>
+                    <span class="derived-sep" aria-hidden="true">&#8250;</span>
+                    <span class="derived-pill" id="derivedOperation" aria-label="Operation"></span>
+                    <span class="derived-sep" aria-hidden="true">&#8250;</span>
+                    <span class="derived-pill" id="derivedTeam" aria-label="Team"></span>
+                    <span class="derived-sep" aria-hidden="true">&#8250;</span>
+                    <span class="derived-pill" id="derivedFacilityType" aria-label="Facility type" style="display:none;"></span>
+                </div>
+
+                <div id="derivedCard" class="derived-card" style="display:none;">
+                    <div class="derived-field">
+                        <span class="derived-label">Cost Code</span>
+                        <span class="derived-value" id="derivedCCLegacy"></span>
+                    </div>
+                    <div class="derived-field">
+                        <span class="derived-label">Entity</span>
+                        <span class="derived-value" id="derivedEntityLegacy"></span>
+                    </div>
+                    <div class="derived-field">
+                        <span class="derived-label">Operation</span>
+                        <span class="derived-value" id="derivedOperationLegacy"></span>
+                    </div>
+                    <div class="derived-field">
+                        <span class="derived-label">Team</span>
+                        <span class="derived-value" id="derivedTeamLegacy"></span>
+                    </div>
+                    <div class="derived-field">
+                        <span class="derived-label">Facility Type</span>
+                        <span class="derived-value" id="derivedTypLegacy"></span>
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label for="roleSearch">Role</label>
+                    <div id="roleDropdown" class="sd-container">
+                        <div class="sd-input-wrap">
+                            <input type="text" id="roleSearch" class="form-input sd-input" placeholder="Select cost code first" disabled autocomplete="off">
+                        </div>
+                        <div id="roleList" class="sd-list"></div>
+                    </div>
+                    <input type="hidden" id="roleValue" name="role">
+                    <div class="field-hint" id="roleHint">Select a cost code to enable role selection</div>
+                    <div class="field-error" id="roleError" style="display:none;"></div>
+                </div>
+            </section>
+
+            <section class="form-section" aria-label="Facility">
+                <div class="section-header">
+                    <div class="section-num">5</div>
+                    <div>
+                        <h2 class="section-title">Facility &amp; Hub</h2>
+                        <p class="section-desc">Select the facility type and official hub for this cost code.</p>
+                    </div>
+                </div>
+
+                <div id="ftAutoGroup" class="auto-fields" style="display:none;">
+                    <div class="auto-field">
+                        <span class="auto-label">Facility Type</span>
+                        <span class="badge-readonly"><input type="text" id="facilityTypeAuto" readonly class="auto-value"></span>
+                    </div>
+                </div>
+
+                <div id="ftSelectGroup" style="display:none;">
+                    <div class="field-group">
+                        <label for="facilityTypeSearch">Facility Type</label>
+                        <div id="facilityTypeDropdown" class="sd-container">
+                            <div class="sd-input-wrap">
+                                <input type="text" id="facilityTypeSearch" class="form-input sd-input" placeholder="Search facility type..." autocomplete="off">
+                            </div>
+                            <div id="facilityTypeList" class="sd-list"></div>
+                        </div>
+                        <input type="hidden" id="facilityTypeValueSelect" name="facility_type">
+                        <input type="hidden" id="facilityTypeValue" name="facility_type_readonly">
+                        <div class="field-error" id="facilityTypeError" style="display:none;"></div>
+                    </div>
+                </div>
+
+                <div class="field-group">
+                    <label for="hubSearch">Facility / Hub</label>
+                    <div id="hubDropdown" class="sd-container">
+                        <div class="sd-input-wrap">
+                            <input type="text" id="hubSearch" class="form-input sd-input" placeholder="Select cost code first" disabled autocomplete="off">
+                        </div>
+                        <div id="hubList" class="sd-list"></div>
+                    </div>
+                    <input type="hidden" id="hubValue" name="facility">
+                    <div class="field-hint" id="hubHint">Select a cost code to enable hub selection</div>
+                    <div class="field-error" id="facilityError" style="display:none;"></div>
+                </div>
+
+                <div class="field-group">
+                    <label for="locationValue">Location</label>
+                    <input type="text" id="locationValue" class="form-input" readonly placeholder="Select a hub to see location">
+                    <div class="field-note" id="locationDisplay">&mdash;</div>
+                </div>
+            </section>
+
+            <section class="form-section" aria-label="Compensation">
+                <div class="section-header">
+                    <div class="section-num">6</div>
+                    <div>
+                        <h2 class="section-title">Salary</h2>
+                        <p class="section-desc">Enter the monthly salary. Accepts numeric values or short forms like 15k.</p>
+                    </div>
+                </div>
+                <div class="field-group">
+                    <label for="salaryInput">Monthly Salary</label>
+                    <input type="text" id="salaryInput" class="form-input" placeholder="e.g. 18000 or 18k" autocomplete="off">
+                    <div class="salary-normalized" id="salaryNormalized" style="display:none;">Normalized: <strong id="salaryNormValue"></strong></div>
+                    <div class="field-error" id="salaryError" style="display:none;"></div>
+                </div>
+            </section>
+
+            <div class="form-actions">
+                <div class="btn-row">
+                    <button type="button" class="btn btn-primary" id="btnReview">Review Candidate</button>
+                    <button type="button" class="btn btn-secondary" id="btnSaveDraft">Save Draft</button>
+                </div>
+            </div>
+        </form>
+
+        <section id="reviewScreen" class="review-screen" style="display:none;" aria-label="Review candidate">
+            <div class="review-card">
+                <div class="review-header">
+                    <h3 id="reviewTitle">Review Candidate</h3>
+                    <p class="review-subtitle" id="reviewSubtitle">Verify all details before confirming</p>
+                </div>
+                <div class="review-grid">
+                    <div class="review-field">
+                        <span class="review-label">Name</span>
+                        <span class="review-value" id="rvName">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Mobile</span>
+                        <span class="review-value" id="rvMobile">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Date of Birth</span>
+                        <span class="review-value" id="rvDob">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Aadhaar File</span>
+                        <span class="review-value" id="rvAadhaar">Not uploaded</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Aadhaar Number</span>
+                        <span class="review-value" id="rvAadhaarNum">XXXX XXXX ?</span>
+                    </div>
+                    <div class="review-field review-field-wide">
+                        <span class="review-label">Address</span>
+                        <span class="review-value" id="rvAddress">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Cost Code</span>
+                        <span class="review-value" id="rvCostCode">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Entity</span>
+                        <span class="review-value" id="rvEntity">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Operation</span>
+                        <span class="review-value" id="rvOperation">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Team</span>
+                        <span class="review-value" id="rvTeam">&mdash;</span>
+                    </div>
+                    <div class="review-field review-field-wide">
+                        <span class="review-label">Role</span>
+                        <span class="review-value" id="rvRole">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Facility Type</span>
+                        <span class="review-value" id="rvFacilityType">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Facility / Hub</span>
+                        <span class="review-value" id="rvFacility">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Salary</span>
+                        <span class="review-value" id="rvSalary">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Migrant</span>
+                        <span class="review-value" id="rvMigrant">No</span>
+                    </div>
+                </div>
+                <div class="review-actions">
+                    <button type="button" class="btn btn-secondary" id="btnBackToEdit">Back to Edit</button>
+                    <span class="spacer"></span>
+                    <button type="button" class="btn btn-outline" id="btnConfirmAddNext">Confirm &amp; Add Next</button>
+                    <button type="button" class="btn btn-primary" id="btnConfirmFinish">Confirm &amp; Finish</button>
+                </div>
+            </div>
+        </section>
+
+        <div id="duplicateModal" class="modal-overlay" style="display:none;" aria-hidden="true">
+            <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="dupTitle">
+                <div class="modal-title" id="dupTitle">Duplicate Candidate Found</div>
+                <div class="modal-text">A candidate with this mobile number may already exist. Please review the details before continuing.</div>
+                <div id="dupDetails" class="dup-details"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="dupViewExisting">View Existing</button>
+                    <button type="button" class="btn btn-primary" id="dupContinue">Continue Anyway</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+
+    <script>
+        var RULES_DATA = {{ rules_json | safe }};
+        var EDIT_CANDIDATE = {{ edit_candidate | tojson }};
+        var EDIT_ID = {{ edit_id | tojson }};
+    </script>
+    <script src="/static/manual_entry.js"></script>
+</body>
+</html>

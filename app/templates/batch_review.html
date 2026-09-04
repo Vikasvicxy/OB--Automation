@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Review - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+    <style>
+        .batch-nav { display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+        .batch-nav input[type=number] { width:80px; padding:6px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:0.88rem; text-align:center; }
+        .batch-nav .btn { font-size:0.8rem; padding:6px 14px; }
+        .section-heading { font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-secondary); margin-bottom:14px; margin-top:32px; }
+        .gen-meta { font-size:0.82rem; color:var(--text-secondary); margin-bottom:14px; line-height:1.6; }
+        .gen-meta code { background:#f1f5f9; padding:2px 6px; border-radius:4px; font-size:0.8rem; }
+        .empty-row { text-align:center; color:var(--text-secondary); padding:24px 0; }
+    </style>
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Batch Review</div>
+                <h1 class="page-title">Batch Review</h1>
+                <p class="page-subtitle">Viewing batch {{ batch_id }} &mdash; {{ counts.total }} candidate(s)</p>
+            </div>
+        </header>
+
+        <div class="batch-nav">
+            <a href="/batch-review?batch_id={{ batch_id - 1 }}" class="btn btn-outline btn-sm">&larr; Prev</a>
+            <label for="batchNavInput" style="font-size:0.82rem;font-weight:600;">Batch</label>
+            <input id="batchNavInput" type="number" min="1" value="{{ batch_id }}">
+            <a href="#" id="batchGo" class="btn btn-primary btn-sm">Go</a>
+            <a href="/batch-review?batch_id={{ batch_id + 1 }}" class="btn btn-outline btn-sm">Next &rarr;</a>
+        </div>
+
+        <section aria-label="Batch summary">
+            <h3 class="section-heading">Summary</h3>
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-count">{{ counts.total }}</div>
+                    <div class="kpi-label">Total</div>
+                    <div class="kpi-desc">All candidates in batch</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ counts.ready }}</div>
+                    <div class="kpi-label">Ready</div>
+                    <div class="kpi-desc">Validated &amp; pending generation</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-draft">{{ counts.draft }}</div>
+                    <div class="kpi-label">Draft</div>
+                    <div class="kpi-desc">Incomplete entries</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-attention">{{ counts.needs_attention }}</div>
+                    <div class="kpi-label">Needs Attention</div>
+                    <div class="kpi-desc">Requires manual review</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-generated">{{ counts.generated }}</div>
+                    <div class="kpi-label">Generated</div>
+                    <div class="kpi-desc">Excel created</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count">{{ counts.other }}</div>
+                    <div class="kpi-label">Other</div>
+                    <div class="kpi-desc">Misc status</div>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Candidates">
+            <h3 class="section-heading">Candidates</h3>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Mobile</th>
+                            <th>Status</th>
+                            <th>Entity / Cost Code / Operation</th>
+                            <th>Facility</th>
+                            <th>Role</th>
+                            <th>Salary</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in candidates %}
+                        <tr data-id="{{ c.candidate_id }}">
+                            <td>#{{ c.candidate_id }}</td>
+                            <td>{{ (c.name | default('')) or '&mdash;' | safe }}</td>
+                            <td>{{ (c.mobile | default('')) or '&mdash;' | safe }}</td>
+                            <td><span class="status-badge status-{{ c.status | default('draft') }}">{{ (c.status | default('draft')) | replace('_', ' ') }}</span></td>
+                            <td>{{ (c.entity | default('')) or '&mdash;' | safe }} / {{ (c.cost_code | default('')) or '&mdash;' | safe }} / {{ (c.operation | default('')) or '&mdash;' | safe }}</td>
+                            <td>{{ (c.facility_name | default('')) or '&mdash;' | safe }}</td>
+                            <td>{{ (c.designation | default('')) or '&mdash;' | safe }}</td>
+                            <td>{{ (c.salary_display | default('')) or (c.salary | default('')) or '&mdash;' | safe }}</td>
+                            <td style="white-space:nowrap;">
+                                <a href="/manual-entry?edit={{ c.candidate_id }}" class="btn btn-sm btn-outline">Review</a>
+                                <button class="btn btn-sm btn-danger remove-btn" data-cid="{{ c.candidate_id }}" title="Remove candidate">&times;</button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="9" class="empty-row">No candidates in this batch.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section aria-label="Generation" class="settings-section" style="margin-top:32px;">
+            <h3 class="settings-heading">Generation</h3>
+            <div class="gen-meta">
+                <p>Template configured: <strong>{% if template_configured %}<span style="color:var(--accent-green);">Yes</span>{% else %}<span style="color:var(--accent-red);">No</span>{% endif %}</strong></p>
+                <p>Output folder: <code>{{ output_base_dir }}</code></p>
+            </div>
+            <button id="btnGenerate" class="btn btn-primary" {% if not template_configured %}disabled title="Template not configured"{% endif %}>Generate Batch Excel</button>
+
+            {% if generated_files %}
+            <h3 class="settings-heading" style="margin-top:24px;">Existing Generated Files</h3>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Batch</th>
+                            <th>Candidates</th>
+                            <th>Generated At</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in generated_files %}
+                        <tr>
+                            <td>{{ f.filename | default('') }}</td>
+                            <td>{{ f.batch_id | default('') }}</td>
+                            <td>{{ f.candidate_count | default(0) }}</td>
+                            <td>{{ f.generated_at | default('') }}</td>
+                            <td><span class="status-badge status-{{ f.generation_status | default('done') }}">{{ f.generation_status | default('done') }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var BATCH_ID = {{ batch_id }};
+
+            var batchInput = document.getElementById("batchNavInput");
+            var batchGo = document.getElementById("batchGo");
+            if (batchGo && batchInput) {
+                batchGo.addEventListener("click", function (e) {
+                    e.preventDefault();
+                    var v = parseInt(batchInput.value, 10);
+                    if (v > 0) window.location.href = "/batch-review?batch_id=" + v;
+                });
+                batchInput.addEventListener("keydown", function (e) {
+                    if (e.key === "Enter") { e.preventDefault(); batchGo.click(); }
+                });
+            }
+
+            document.querySelectorAll(".remove-btn").forEach(function (btn) {
+                btn.addEventListener("click", function () {
+                    var cid = btn.getAttribute("data-cid");
+                    if (!confirm("Remove candidate #" + cid + "?")) return;
+                    fetch("/api/remove-candidate/" + cid, { method: "POST" })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (data.success) {
+                                var row = btn.closest("tr");
+                                if (row) row.remove();
+                                if (typeof showToast === "function") showToast("Candidate #" + cid + " removed", "success");
+                            } else {
+                                if (typeof showToast === "function") showToast(data.error || "Failed", "error");
+                            }
+                        })
+                        .catch(function () {
+                            if (typeof showToast === "function") showToast("Network error", "error");
+                        });
+                });
+            });
+
+            var btnGen = document.getElementById("btnGenerate");
+            if (btnGen) {
+                btnGen.addEventListener("click", function () {
+                    btnGen.disabled = true;
+                    btnGen.textContent = "Generating\u2026";
+                    fetch("/api/generate-excel", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ batch_id: BATCH_ID, only_ready: true })
+                    })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (data.success) {
+                                if (typeof showToast === "function") showToast("Excel generated: " + (data.filename || ""), "success");
+                                setTimeout(function () { window.location.reload(); }, 1500);
+                            } else {
+                                if (typeof showToast === "function") showToast(data.error || "Generation failed", "error");
+                                btnGen.disabled = false;
+                                btnGen.textContent = "Generate Batch Excel";
+                            }
+                        })
+                        .catch(function () {
+                            if (typeof showToast === "function") showToast("Network error", "error");
+                            btnGen.disabled = false;
+                            btnGen.textContent = "Generate Batch Excel";
+                        });
+                });
+            }
+        })();
+    </script>
+</body>
+</html>

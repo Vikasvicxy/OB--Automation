@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Upload - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+    <style>
+        .safety-banner{padding:14px 18px;border-radius:8px;margin-bottom:18px;font-weight:600;display:flex;align-items:center;gap:10px}
+        .safety-banner.safety-off{background:rgba(220,53,69,.12);color:#dc3545;border:1px solid rgba(220,53,69,.35)}
+        .safety-banner.safety-on{background:rgba(40,167,69,.12);color:#28a745;border:1px solid rgba(40,167,69,.35)}
+        .safety-banner .safety-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+        .safety-banner.safety-off .safety-dot{background:#dc3545}
+        .safety-banner.safety-on .safety-dot{background:#28a745}
+        .flag-badges{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap}
+        .flag-badge{font-size:.75rem;padding:2px 8px;border-radius:4px;font-weight:600;border:1px solid}
+        .flag-badge.off{color:#dc3545;border-color:rgba(220,53,69,.3);background:rgba(220,53,69,.07)}
+        .flag-badge.on{color:#28a745;border-color:rgba(40,167,69,.3);background:rgba(40,167,69,.07)}
+        .card-block{background:var(--card-bg,#fff);border:1px solid var(--border,#e0e0e0);border-radius:8px;padding:18px;margin-bottom:16px}
+        .card-block h3{margin:0 0 10px;font-size:1rem}
+        .card-block p{margin:0 0 6px;color:var(--text-muted,#666);font-size:.875rem}
+        .step-header{font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted,#888);margin-bottom:6px;font-weight:700}
+        .review-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;margin:10px 0}
+        .review-grid dt{font-weight:600;font-size:.85rem}
+        .review-grid dd{margin:0;font-size:.85rem;color:var(--text-muted,#555)}
+        .checklist{list-style:none;padding:0;margin:10px 0}
+        .checklist li{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border,#eee)}
+        .checklist li:last-child{border-bottom:none}
+        .checklist input[type="checkbox"]{margin-top:3px;flex-shrink:0}
+        .btn-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+        .btn{padding:8px 18px;border-radius:6px;border:none;cursor:pointer;font-weight:600;font-size:.875rem;transition:opacity .15s}
+        .btn:disabled{opacity:.45;cursor:not-allowed}
+        .btn-primary{background:#0d6efd;color:#fff}
+        .btn-danger{background:#dc3545;color:#fff}
+        .btn-secondary{background:#6c757d;color:#fff}
+        .btn-success{background:#28a745;color:#fff}
+        .msg-ok{color:#28a745;font-weight:600;margin-top:8px}
+        .msg-err{color:#dc3545;font-weight:600;margin-top:8px}
+        .diag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+        .diag-item{background:var(--bg-subtle,#f8f9fa);padding:8px 10px;border-radius:6px;font-size:.8rem}
+        .diag-item strong{display:block;font-size:.7rem;text-transform:uppercase;color:var(--text-muted,#888);margin-bottom:2px}
+        .file-picker{width:100%;padding:8px 10px;border:1px solid var(--border,#ccc);border-radius:6px;font-size:.9rem}
+    </style>
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <h1 class="page-title">Live Upload</h1>
+                <p class="page-subtitle">Controlled single-candidate eSampark upload</p>
+            </div>
+        </header>
+
+        {# ── SAFETY BANNER ── #}
+        {% if safety.live_upload_allowed %}
+        <div class="safety-banner safety-on">
+            <span class="safety-dot"></span>
+            <span>Live upload is <strong>ENABLED</strong> &mdash; real uploads WILL be submitted to eSampark.</span>
+        </div>
+        {% else %}
+        <div class="safety-banner safety-off">
+            <span class="safety-dot"></span>
+            <span>Live upload is <strong>DISABLED</strong> &mdash; no real uploads will be performed.</span>
+        </div>
+        {% endif %}
+
+        <div class="flag-badges" id="flagBadges">
+            <span class="flag-badge {{ 'on' if safety.REAL_UPLOAD_ENABLED else 'off' }}">REAL_UPLOAD_ENABLED: {{ safety.REAL_UPLOAD_ENABLED }}</span>
+            <span class="flag-badge {{ 'on' if safety.ESAMPARK_LIVE_TEST_MODE else 'off' }}">ESAMPARK_LIVE_TEST_MODE: {{ safety.ESAMPARK_LIVE_TEST_MODE }}</span>
+            <span class="flag-badge {{ 'on' if safety.live_upload_allowed else 'off' }}">live_upload_allowed: {{ safety.live_upload_allowed }}</span>
+        </div>
+
+        {# ── FILE PICKER ── #}
+        <div class="card-block" style="margin-top:16px">
+            <h3>Select Generated File</h3>
+            <select class="file-picker" id="filePicker" onchange="onFilePicked(this.value)">
+                <option value="">-- Choose a generated file --</option>
+                {% for f in files %}
+                <option value="{{ f.file_id }}" {{ 'selected' if selected_file_id and f.file_id == selected_file_id }}>
+                    #{{ f.file_id }} &mdash; {{ f.filename }} ({{ f.candidate_count }} candidate{{ 's' if f.candidate_count != 1 }})
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        {# ── CURRENT REPORT (if pre-selected) ── #}
+        {% if current.found %}
+        <div class="card-block">
+            <div class="step-header">Existing Upload Record</div>
+            <dl class="review-grid">
+                <dt>Live Upload ID</dt><dd>{{ current.record.live_upload_id }}</dd>
+                <dt>Flow Status</dt><dd>{{ current.record.flow_status }}</dd>
+                <dt>Portal Status</dt><dd>{{ current.record.portal_status or 'N/A' }}</dd>
+                <dt>Candidate</dt><dd>{{ current.candidate.name if current.candidate else 'N/A' }}</dd>
+                <dt>File</dt><dd>{{ current.generated_file.filename if current.generated_file else 'N/A' }}</dd>
+                {% if current.creation_remarks %}
+                <dt>Remarks</dt><dd>{{ current.creation_remarks }}</dd>
+                {% endif %}
+            </dl>
+        </div>
+        {% endif %}
+
+        {# ── STEP 1a: PREPARE + CHECKLIST ── #}
+        <div class="card-block" id="stepPrepare" style="display:none">
+            <div class="step-header">Step 1 &mdash; Manual Review Checklist</div>
+            <div id="prepareErrors"></div>
+            <div id="preparePayload" style="display:none">
+                <p>Review the candidate details below, then tick every item.</p>
+                <div id="candidateInfo"></div>
+                <ul class="checklist" id="checklist"></ul>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="btnConfirm" onclick="doConfirm()" disabled>Confirm Review</button>
+                </div>
+            </div>
+        </div>
+
+        {# ── STEP 1b / STEP 2: CONFIRM RESULT + FINAL UPLOAD ── #}
+        <div class="card-block" id="stepSubmit" style="display:none">
+            <div class="step-header">Step 2 &mdash; Final Upload</div>
+            <div id="confirmResult"></div>
+            <div class="btn-row">
+                <button class="btn btn-danger" id="btnUpload" onclick="doUpload()" disabled>Upload to eSampark</button>
+            </div>
+            <div id="uploadResult"></div>
+        </div>
+
+        {# ── DIAGNOSTIC (read-only) ── #}
+        <div class="card-block">
+            <div class="step-header">Portal Diagnostic</div>
+            <div class="diag-grid">
+                {% for key, val in diagnostic.items() %}
+                <div class="diag-item">
+                    <strong>{{ key }}</strong>
+                    {{ val }}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div id="msgBox"></div>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+
+    <script>
+    (function(){
+        var SAFETY_ALLOWED = {{ 'true' if safety.live_upload_allowed else 'false' }};
+        var SELECTED_FILE_ID = {{ selected_file_id|default('null', true) }};
+        var currentFileId = SELECTED_FILE_ID;
+        var confirmed = false;
+
+        var elPicker = document.getElementById('filePicker');
+        var elPrepare = document.getElementById('stepPrepare');
+        var elPayload = document.getElementById('preparePayload');
+        var elErrors = document.getElementById('prepareErrors');
+        var elChecklist = document.getElementById('checklist');
+        var elCandInfo = document.getElementById('candidateInfo');
+        var elBtnConfirm = document.getElementById('btnConfirm');
+        var elStepSubmit = document.getElementById('stepSubmit');
+        var elConfirmResult = document.getElementById('confirmResult');
+        var elBtnUpload = document.getElementById('btnUpload');
+        var elUploadResult = document.getElementById('uploadResult');
+
+        if(SELECTED_FILE_ID) elPicker.value = SELECTED_FILE_ID;
+
+        window.onFilePicked = function(val){
+            currentFileId = val ? parseInt(val) : null;
+            confirmed = false;
+            elPrepare.style.display = 'none';
+            elPayload.style.display = 'none';
+            elErrors.innerHTML = '';
+            elChecklist.innerHTML = '';
+            elStepSubmit.style.display = 'none';
+            elBtnUpload.disabled = true;
+            elUploadResult.innerHTML = '';
+            if(currentFileId) doPrepare(currentFileId);
+        };
+
+        function doPrepare(fid){
+            elPrepare.style.display = 'block';
+            elPayload.style.display = 'none';
+            elErrors.innerHTML = '';
+            fetch('/api/live-upload/prepare?file_id='+fid)
+            .then(function(r){return r.json()})
+            .then(function(d){
+                if(!d.ok){
+                    elErrors.innerHTML = '<div class="msg-err">' + (d.errors||[]).join('; ') + (d.error ? ' — '+d.error : '') + '</div>';
+                    return;
+                }
+                elPayload.style.display = 'block';
+                var c = d.candidate || {};
+                elCandInfo.innerHTML =
+                    '<dl class="review-grid">' +
+                    '<dt>Candidate</dt><dd>' + (c.name||'—') + ' (' + (c.candidate_id||'') + ')</dd>' +
+                    '<dt>Mobile</dt><dd>' + (c.mobile||'—') + '</dd>' +
+                    '<dt>Role</dt><dd>' + (c.role||'—') + '</dd>' +
+                    '<dt>Facility</dt><dd>' + (c.facility||'—') + '</dd>' +
+                    '<dt>Location</dt><dd>' + (c.location||'—') + '</dd>' +
+                    '<dt>Cost Code</dt><dd>' + (c.cost_code||'—') + '</dd>' +
+                    '<dt>Salary</dt><dd>' + (c.salary||'—') + '</dd>' +
+                    '</dl>';
+
+                elChecklist.innerHTML = '';
+                (d.checklist||[]).forEach(function(item){
+                    var li = document.createElement('li');
+                    li.innerHTML = '<input type="checkbox" value="' + item.replace(/"/g,'&quot;') + '" onchange="onCheckChange()"> <span>' + item + '</span>';
+                    elChecklist.appendChild(li);
+                });
+                window.onCheckChange = function(){
+                    var boxes = elChecklist.querySelectorAll('input[type="checkbox"]');
+                    var allChecked = true;
+                    boxes.forEach(function(b){if(!b.checked) allChecked=false});
+                    elBtnConfirm.disabled = !allChecked;
+                };
+            })
+            .catch(function(e){
+                elErrors.innerHTML = '<div class="msg-err">Network error: ' + e.message + '</div>';
+            });
+        }
+
+        window.doConfirm = function(){
+            if(!currentFileId) return;
+            var checked = [];
+            elChecklist.querySelectorAll('input[type="checkbox"]:checked').forEach(function(b){checked.push(b.value)});
+            elBtnConfirm.disabled = true;
+            fetch('/api/live-upload/confirm', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({file_id: currentFileId, checked: checked})
+            })
+            .then(function(r){return r.json()})
+            .then(function(d){
+                if(!d.ok){
+                    elConfirmResult.innerHTML = '<div class="msg-err">' + (d.error||'Confirmation failed') + (d.missing ? ' — missing: '+d.missing.join(', ') : '') + '</div>';
+                    elBtnConfirm.disabled = false;
+                    return;
+                }
+                confirmed = true;
+                elConfirmResult.innerHTML = '<div class="msg-ok">Manual review confirmed. You may now proceed to upload.</div>';
+                elStepSubmit.style.display = 'block';
+                elBtnUpload.disabled = !SAFETY_ALLOWED;
+                if(!SAFETY_ALLOWED){
+                    elBtnUpload.title = 'Live upload is disabled — both REAL_UPLOAD_ENABLED and ESAMPARK_LIVE_TEST_MODE must be true.';
+                }
+            })
+            .catch(function(e){
+                elConfirmResult.innerHTML = '<div class="msg-err">Network error: ' + e.message + '</div>';
+                elBtnConfirm.disabled = false;
+            });
+        };
+
+        window.doUpload = function(){
+            if(!SAFETY_ALLOWED || !currentFileId || !confirmed) return;
+            elBtnUpload.disabled = true;
+            elUploadResult.innerHTML = '<p style="color:#666">Uploading…</p>';
+            fetch('/api/live-upload/submit', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({file_id: currentFileId, action: 'submit_one_candidate'})
+            })
+            .then(function(r){return r.json()})
+            .then(function(d){
+                if(!d.ok){
+                    elUploadResult.innerHTML = '<div class="msg-err">' + (d.error||'Upload failed') + '</div>';
+                    elBtnUpload.disabled = false;
+                    return;
+                }
+                elUploadResult.innerHTML = '<div class="msg-ok">Upload submitted. Portal status: ' + (d.portal_status||d.message||'pending') + '</div>';
+            })
+            .catch(function(e){
+                elUploadResult.innerHTML = '<div class="msg-err">Network error: ' + e.message + '</div>';
+                elBtnUpload.disabled = false;
+            });
+        };
+
+        if(currentFileId) doPrepare(currentFileId);
+    })();
+    </script>
+</body>
+</html>

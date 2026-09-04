@@ -1,0 +1,75 @@
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <div class="brand-icon">T</div>
+        <span class="brand-text">TeamHR</span>
+    </div>
+    <nav class="sidebar-nav" aria-label="Main navigation">
+        {% set active = nav_active | default("") %}
+
+        <a href="/" class="nav-item {% if active == 'dashboard' %}active{% endif %}">
+            <span class="nav-icon">&#9632;</span>
+            Dashboard
+        </a>
+
+        <div class="nav-group open" data-group="candidates">
+            <button type="button" class="nav-group-toggle" data-group="candidates" aria-expanded="true">
+                <span class="nav-icon">&#9654;</span> Candidates
+                <span class="nav-group-arrow">&#9654;</span>
+            </button>
+            <div class="nav-group-items">
+                <a href="/candidates" class="nav-item {% if active == 'candidates' %}active{% endif %}">All Candidates</a>
+                <a href="/smart-upload" class="nav-item {% if active == 'smart_upload' %}active{% endif %}">Smart Upload</a>
+                <a href="/manual-entry" class="nav-item {% if active == 'manual_entry' %}active{% endif %}">Manual Entry</a>
+                <a href="/data-quality" class="nav-item {% if active == 'data_quality' %}active{% endif %}">Data Quality</a>
+            </div>
+        </div>
+
+        <div class="nav-group" data-group="batches">
+            <button type="button" class="nav-group-toggle" data-group="batches" aria-expanded="false">
+                <span class="nav-icon">&#9776;</span> Batches
+                <span class="nav-group-arrow">&#9654;</span>
+            </button>
+            <div class="nav-group-items">
+                <a href="/batch-review" class="nav-item {% if active == 'batch_review' %}active{% endif %}">Batch Review</a>
+                <a href="/reports" class="nav-item {% if active == 'reports' %}active{% endif %}">Generated Files</a>
+            </div>
+        </div>
+
+        <div class="nav-group" data-group="portal">
+            <button type="button" class="nav-group-toggle" data-group="portal" aria-expanded="false">
+                <span class="nav-icon">&#8681;</span> Portal
+                <span class="nav-group-arrow">&#9654;</span>
+            </button>
+            <div class="nav-group-items">
+                <a href="/portal" class="nav-item {% if active == 'portal' %}active{% endif %}">eSampark</a>
+                <a href="/live-upload" class="nav-item {% if active == 'live_upload' %}active{% endif %}">Live Upload</a>
+            </div>
+        </div>
+
+        <div class="nav-group" data-group="masters">
+            <button type="button" class="nav-group-toggle" data-group="masters" aria-expanded="false">
+                <span class="nav-icon">&#9733;</span> Masters
+                <span class="nav-group-arrow">&#9654;</span>
+            </button>
+            <div class="nav-group-items">
+                <a href="/admin/master-data" class="nav-item {% if active == 'admin_master' %}active{% endif %}">Admin Master Data</a>
+                <a href="/validation" class="nav-item {% if active == 'validation' %}active{% endif %}">Validation</a>
+            </div>
+        </div>
+
+        <div class="nav-group" data-group="system">
+            <button type="button" class="nav-group-toggle" data-group="system" aria-expanded="false">
+                <span class="nav-icon">&#9881;</span> System
+                <span class="nav-group-arrow">&#9654;</span>
+            </button>
+            <div class="nav-group-items">
+                <a href="/settings" class="nav-item {% if active == 'settings' %}active{% endif %}">Backup &amp; Restore</a>
+                <a href="/settings" class="nav-item {% if active == 'settings' %}active{% endif %}">Health</a>
+                <a href="/settings" class="nav-item {% if active == 'settings' %}active{% endif %}">Settings</a>
+            </div>
+        </div>
+    </nav>
+    <div class="sidebar-footer">
+        <span class="version">v0.1.0</span>
+    </div>
+</aside>

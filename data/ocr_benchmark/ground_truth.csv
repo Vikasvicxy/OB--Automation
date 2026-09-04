@@ -1,0 +1,2 @@
+file_name,expected_name,expected_dob,expected_aadhaar_last4,expected_address_present,notes
+example.jpg,Pavan K N,31/07/2006,9012,yes,Add your test file details here
