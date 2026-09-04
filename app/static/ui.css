@@ -126,6 +126,30 @@
 }
 .content-searchbar .global-search { width: min(340px, 100%); }
 
+/* Global search result sub-line (role · facility) + small spinner */
+.global-search-results .gs-item { align-items: flex-start; }
+.global-search-results .gs-item .gs-primary,
+.global-search-results .gs-item .gs-meta { flex-shrink: 0; }
+.global-search-results .gs-sub {
+    display: block;
+    width: 100%;
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.global-search-results .gs-loading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 10px;
+    color: var(--text-faint);
+    font-size: 0.85rem;
+}
+.spinner-sm { width: 16px; height: 16px; border-width: 2px; }
+
 /* ── Sidebar group navigation ────────────────────────────── */
 .nav-group { margin-bottom: 2px; }
 .nav-group > .nav-group-toggle {
@@ -258,6 +282,67 @@
 .kpi-grid.kpi-grid-sm { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
 .kpi-card.kpi-card-sm .kpi-count { font-size: 1.4rem; }
 
+/* ── Lightweight CSS bar charts (no JS library) ─────────── */
+.chart-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px 0;
+}
+.chart-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.chart-label {
+    flex-shrink: 0;
+    width: 160px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+}
+.chart-track {
+    flex: 1;
+    height: 14px;
+    background: var(--surface-muted);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-pill);
+    overflow: hidden;
+}
+.chart-fill {
+    height: 100%;
+    border-radius: var(--radius-pill);
+    background: var(--accent-blue);
+    min-width: 2px;
+    transition: width var(--transition);
+}
+.chart-fill.status-draft    { background: var(--accent-amber); }
+.chart-fill.status-ready    { background: var(--accent-blue); }
+.chart-fill.status-generated{ background: var(--accent-green); }
+.chart-fill.status-needs-attention { background: var(--accent-red); }
+.chart-value {
+    flex-shrink: 0;
+    width: 44px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-align: left;
+}
+.chart-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--sp-5);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--sp-6);
+}
+.chart-section .section-heading { margin-bottom: var(--sp-4); }
+
+
 /* ── Loading / empty / inline states ─────────────────────── */
 .ui-loading, .ui-empty {
     display: flex;
@@ -285,9 +370,20 @@
 .dq-sev-review { color: var(--accent-amber); }
 .dq-sev-informational { color: var(--accent-blue); }
 
+/* Active data-quality drill-down card */
+.dq-card-active {
+    border-color: var(--accent-blue);
+    box-shadow: var(--shadow-md);
+}
+
 /* ── Data quality detail ────────────────────────────────── */
 .dq-summary { margin-bottom: var(--sp-4); }
 #dqDetail .data-table { margin-top: var(--sp-3); }
+.empty-row {
+    text-align: center;
+    color: var(--text-faint);
+    padding: 24px 0;
+}
 
 /* ── Focus visibility (accessibility) ───────────────────── */
 a:focus-visible, button:focus-visible, input:focus-visible, [tabindex]:focus-visible {

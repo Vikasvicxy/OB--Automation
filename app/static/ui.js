@@ -85,7 +85,9 @@
                 panel.innerHTML +=
                     "<a class='gs-item' href='/manual-entry?edit=" + c.candidate_id + "'>" +
                     "<span class='gs-primary'>" + escapeHtml(c.name || "") + "</span>" +
-                    "<span class='gs-meta'>" + escapeHtml(c.status || "Draft") + " \u00B7 #" + c.candidate_id + "</span></a>";
+                    "<span class='gs-meta'>" + escapeHtml(c.status || "Draft") + " \u00B7 #" + c.candidate_id + "</span>" +
+                    "<span class='gs-sub'>" + escapeHtml(c.designation || "") +
+                    (c.facility_name ? " \u00B7 " + escapeHtml(c.facility_name || "") : "") + "</span></a>";
                 });
             }
             if (results.files && results.files.length) {
@@ -111,11 +113,16 @@
         }
         function openResults() { panel.classList.add("open"); }
         function closeResults() { panel.classList.remove("open"); }
+        function showLoading() {
+            panel.innerHTML = "<div class='gs-loading'><span class='spinner spinner-sm'></span> Searching&hellip;</div>";
+            openResults();
+        }
 
         box.addEventListener("input", function () {
             var q = box.value.trim();
             clearTimeout(timer);
             if (!q) { panel.innerHTML = ""; closeResults(); return; }
+            showLoading();
             timer = setTimeout(function () {
                 fetch("/api/search?q=" + encodeURIComponent(q))
                     .then(function (r) { return r.json(); })
@@ -123,10 +130,20 @@
                         results = data || {};
                         render();
                         openResults();
-                    }).catch(function () { closeResults(); });
+                    }).catch(function () {
+                        panel.innerHTML = "<div class='gs-empty'>Unable to load search results</div>";
+                        openResults();
+                    });
             }, 220);
         });
-        box.addEventListener("focus", function () { if (panel.innerHTML) openResults(); });
+        box.addEventListener("focus", function () {
+            if (!box.value.trim()) {
+                panel.innerHTML = "<div class='gs-empty'>Type to search candidates or files</div>";
+                openResults();
+            } else if (panel.innerHTML) {
+                openResults();
+            }
+        });
         document.addEventListener("click", function (e) {
             if (!box.contains(e.target)) closeResults();
         });

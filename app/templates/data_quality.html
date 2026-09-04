@@ -26,67 +26,104 @@
 
         <section class="kpi-grid" id="dqCards">
             {% for card in cards %}
-            <div class="kpi-card" data-key="{{ card.key }}" tabindex="0" role="button" aria-expanded="false">
+            <a class="kpi-card {% if card.key == active_issue %}dq-card-active{% endif %}" href="/data-quality?issue={{ card.key }}" data-key="{{ card.key }}">
                 <div class="kpi-count dq-sev-{{ card.severity | lower }}">{{ card.count }}</div>
                 <div class="kpi-label">{{ card.label }}</div>
                 <div class="kpi-desc">Severity: {{ card.severity }}</div>
-                <span class="kpi-arrow">&#9662;</span>
-            </div>
+                <span class="kpi-arrow">&#8250;</span>
+            </a>
             {% endfor %}
         </section>
 
-        <section class="settings-section" id="dqDetail" hidden>
+        <section class="settings-section" id="dqDetail" {% if not active_issue %}hidden{% endif %}>
             <h3 class="settings-heading" id="dqDetailTitle">Detail</h3>
             <p class="page-subtitle" id="dqDetailSub"></p>
-            <table class="data-table">
-                <thead><tr><th>Candidate ID</th><th>Name</th><th>Status</th><th>Action</th></tr></thead>
-                <tbody id="dqBody"></tbody>
-            </table>
+            <div class="table-container" style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Candidate</th>
+                            <th>Mobile</th>
+                            <th>Status</th>
+                            <th>Role</th>
+                            <th>Facility</th>
+                            <th>Cost Code</th>
+                            <th>Issue</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dqBody"></tbody>
+                </table>
+            </div>
         </section>
     </main>
 
     {% include 'partials/_toast.html' %}
     <script>
         (function () {
-            var index = {
-                /* key -> [candidate_ids] filled by template */
-                {% for card in cards %}
-                "{{ card.key }}": {{ card.candidate_ids | tojson }},
-                {% endfor %}
-            };
-            var names = {
-                {% for card in cards %}
-                "{{ card.key }}": "{{ card.label }}",
-                {% endfor %}
-            };
+            var ACTIVE = {{ active_issue | tojson }};
+            var cards = {{ cards | tojson }};
+            if (!cards || !cards.length) {
+                var title = document.getElementById("dqDetailTitle");
+                if (title) title.textContent = "No candidates to analyze";
+            }
+
+            function escapeHtml(s) {
+                return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+                    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+                });
+            }
+
+            function renderCard(key, open) {
+                var card = null;
+                for (var i = 0; i < cards.length; i++) {
+                    if (cards[i].key === key) { card = cards[i]; break; }
+                }
+                if (!card) return;
+                var detail = document.getElementById("dqDetail");
+                if (!open) { detail.hidden = true; return; }
+                detail.hidden = false;
+                document.querySelectorAll("#dqCards .kpi-card").forEach(function (el) {
+                    el.classList.toggle("dq-card-active", el.getAttribute("data-key") === key);
+                });
+                document.getElementById("dqDetailTitle").textContent = card.label + " (" + (card.candidates || []).length + ")";
+                document.getElementById("dqDetailSub").textContent =
+                    "Click a candidate to open its review page.";
+                var tb = document.getElementById("dqBody");
+                tb.innerHTML = "";
+                var rows = card.candidates || [];
+                if (!rows.length) {
+                    tb.innerHTML = "<tr><td colspan='8' class='empty-row'>No candidates in this bucket.</td></tr>";
+                    return;
+                }
+                rows.forEach(function (c) {
+                    var tr = document.createElement("tr");
+                    var status = (c.status || "Draft").toLowerCase();
+                    tr.innerHTML =
+                        "<td>" + escapeHtml(c.name || "—") + "</td>" +
+                        "<td>" + escapeHtml(c.mobile || "—") + "</td>" +
+                        "<td><span class='status-badge status-" + escapeHtml(status.replace(/_/g, "-")) + "'>" + escapeHtml(c.status || "—") + "</span></td>" +
+                        "<td>" + escapeHtml(c.designation || "—") + "</td>" +
+                        "<td>" + escapeHtml(c.facility_name || "—") + "</td>" +
+                        "<td>" + escapeHtml(c.cost_code || "—") + "</td>" +
+                        "<td>" + escapeHtml(card.label) + "</td>" +
+                        "<td><a href='/manual-entry?edit=" + c.candidate_id + "' class='btn btn-sm btn-outline'>Open Candidate</a></td>";
+                    tb.appendChild(tr);
+                });
+            }
+
             document.querySelectorAll("#dqCards .kpi-card").forEach(function (el) {
-                el.addEventListener("click", function () {
+                el.addEventListener("click", function (e) {
+                    e.preventDefault();
                     var key = el.getAttribute("data-key");
-                    var open = el.getAttribute("aria-expanded") === "true";
-                    document.querySelectorAll("#dqCards .kpi-card").forEach(function (o) {
-                        o.setAttribute("aria-expanded", "false");
-                    });
-                    document.getElementById("dqDetail").hidden = !!open;
-                    if (open) return;
-                    el.setAttribute("aria-expanded", "true");
-                    var ids = index[key] || [];
-                    document.getElementById("dqDetailTitle").textContent = names[key] + " (" + ids.length + ")";
-                    document.getElementById("dqDetailSub").textContent =
-                        "Click a candidate to open its review page.";
-                    var tb = document.getElementById("dqBody");
-                    tb.innerHTML = "";
-                    if (!ids.length) {
-                        tb.innerHTML = "<tr><td colspan='4' class='empty-row'>No candidates in this bucket.</td></tr>";
-                        return;
-                    }
-                    ids.forEach(function (id) {
-                        var tr = document.createElement("tr");
-                        tr.innerHTML = "<td>#" + id + "</td><td><a href='/manual-entry?edit=" + id + "'>Open</a></td>" +
-                            "<td>&mdash;</td><td><a href='/manual-entry?edit=" + id + "' class='btn btn-sm btn-outline'>Review</a></td>";
-                        tb.appendChild(tr);
-                    });
+                    var open = key === ACTIVE;
+                    ACTIVE = open ? "" : key;
+                    renderCard(key, open);
+                    history.replaceState(null, "", open ? "/data-quality?issue=" + key : "/data-quality");
                 });
             });
+
+            if (ACTIVE) renderCard(ACTIVE, true);
         })();
     </script>
 </body>

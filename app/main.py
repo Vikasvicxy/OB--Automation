@@ -341,50 +341,25 @@ async def api_candidates(search: str = ""):
 
 @app.get("/api/search")
 async def api_search(q: str = ""):
-    """Global search. Searches candidates (name/mobile/id/batch/facility/role)
-    and generated files (filename). NEVER searches sensitive Aadhaar values.
+    """Global search. Uses parameterized SQL against safe fields only.
+
+    Candidates match on name/mobile/id/batch/facility/role. Generated files
+    match on filename/batch_id. Returns at most 10 of each. NEVER searches or
+    exposes sensitive Aadhaar values, addresses, or raw OCR text.
     """
     q = (q or "").strip()
-    if not q:
-        return JSONResponse({"candidates": [], "files": []})
-    ql = q.lower()
-    candidates = database.list_candidates()
-    matches = []
-    for c in candidates:
-        name = (c.get("name") or "").lower()
-        mobile = (c.get("mobile") or "").strip()
-        facility = (c.get("facility_name") or "").lower()
-        role = (c.get("designation") or "").lower()
-        cid = str(c.get("candidate_id") or "")
-        bid = str(c.get("batch_id") or "")
-        if (ql in name or ql in mobile or ql in cid or ql in bid
-                or ql in facility or ql in role):
-            matches.append({
-                "candidate_id": c.get("candidate_id"),
-                "name": c.get("name"),
-                "mobile": mobile,
-                "status": c.get("status") or "Draft",
-                "batch_id": c.get("batch_id"),
-            })
-    matches = matches[:20]
-
-    files = []
-    for f in database.list_generated_files(limit=200):
-        filename = (f.get("filename") or "").lower()
-        if ql in filename:
-            files.append({
-                "filename": f.get("filename"),
-                "batch_id": f.get("batch_id"),
-            })
-    files = files[:10]
-    return JSONResponse({"candidates": matches, "files": files})
+    return JSONResponse(database.search_global(q, limit=10))
 
 
 # ── Data Quality Command Center ──────────────────────────────────────────────
 
 
 def _dq_categories(candidates: list[dict]) -> list[dict]:
-    """Classify candidates into data-quality buckets (safe metrics only)."""
+    """Classify candidates into data-quality buckets (safe metrics only).
+
+    Each bucket carries the affected candidate IDs plus a safe detail map
+    (no Aadhaar/address) so the UI can render a rich drill-down table.
+    """
     def first_missing_required(c):
         for f in ("name", "mobile", "aadhaar_number"):
             if not (c.get(f) or "").strip():
@@ -435,6 +410,19 @@ def _dq_categories(candidates: list[dict]) -> list[dict]:
         if (c.get("status") or "").lower() in ("needs_attention",):
             buckets["needs_review"].append(cid)
 
+    # Build a safe candidate detail map for the drill-down table (NO Aadhaar/address).
+    def _safe(c):
+        return {
+            "candidate_id": c.get("candidate_id"),
+            "name": c.get("name") or "",
+            "mobile": (c.get("mobile") or "").strip(),
+            "status": c.get("status") or "",
+            "designation": c.get("designation") or "",
+            "facility_name": c.get("facility_name") or "",
+            "cost_code": c.get("cost_code") or "",
+            "batch_id": c.get("batch_id"),
+        }
+
     # Severity labels exposed in the command center cards.
     def bucket(label, cids, severity):
         return {
@@ -443,6 +431,7 @@ def _dq_categories(candidates: list[dict]) -> list[dict]:
             "count": len(cids),
             "severity": severity,
             "candidate_ids": cids[:20],
+            "candidates": [_safe(c) for c in candidates if c.get("candidate_id") in set(cids)][:20],
         }
 
     return [
@@ -459,7 +448,7 @@ def _dq_categories(candidates: list[dict]) -> list[dict]:
 
 
 @app.get("/data-quality", response_class=HTMLResponse)
-async def data_quality_page(request: Request):
+async def data_quality_page(request: Request, issue: str = ""):
     candidates = database.list_candidates()
     cards = _dq_categories(candidates)
     return templates.TemplateResponse(
@@ -469,6 +458,7 @@ async def data_quality_page(request: Request):
             "cards": cards,
             "nav_active": "data_quality",
             "total": len(candidates),
+            "active_issue": issue,
         },
     )
 

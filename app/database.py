@@ -596,6 +596,52 @@ def search_candidates(query: str) -> list[dict]:
     return list_candidates(search=query)
 
 
+def search_global(query: str, limit: int = 10) -> dict:
+    """Global search across SAFE fields only, using parameterized SQL.
+
+    Candidates match on name / mobile / candidate_id / batch_id / facility /
+    role(designation). Generated files match on filename / batch_id.
+
+    NEVER searches sensitive fields (Aadhaar number, address, raw OCR text).
+    Returns at most ``limit`` candidates and ``limit`` files, and only exposes
+    safe metadata (no Aadhaar, no address).
+    """
+    query = (query or "").strip()
+    result = {"candidates": [], "files": []}
+    if not query:
+        return result
+    conn = _get_connection()
+    try:
+        like = f"%{query.lower()}%"
+        cand_rows = conn.execute(
+            "SELECT candidate_id, name, mobile, status, batch_id, facility_name, "
+            "designation, cost_code, candidate_number "
+            "FROM candidates "
+            "WHERE lower(COALESCE(name, '')) LIKE ? "
+            "   OR COALESCE(mobile, '') LIKE ? "
+            "   OR CAST(candidate_id AS TEXT) LIKE ? "
+            "   OR CAST(CAST(batch_id AS INTEGER) AS TEXT) LIKE ? "
+            "   OR lower(COALESCE(facility_name, '')) LIKE ? "
+            "   OR lower(COALESCE(designation, '')) LIKE ? "
+            "ORDER BY candidate_id DESC LIMIT ?",
+            (like, like, like, like, like, like, limit),
+        ).fetchall()
+        result["candidates"] = [dict(r) for r in cand_rows]
+
+        file_rows = conn.execute(
+            "SELECT file_id, filename, batch_id, generated_at, candidate_count "
+            "FROM generated_files "
+            "WHERE lower(COALESCE(filename, '')) LIKE ? "
+            "   OR CAST(CAST(batch_id AS INTEGER) AS TEXT) LIKE ? "
+            "ORDER BY file_id DESC LIMIT ?",
+            (like, like, limit),
+        ).fetchall()
+        result["files"] = [dict(r) for r in file_rows]
+        return result
+    finally:
+        conn.close()
+
+
 def get_batch_candidates(batch_id: int) -> list[dict]:
     return list_candidates(batch_id=batch_id)
 

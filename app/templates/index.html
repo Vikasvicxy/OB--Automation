@@ -94,31 +94,69 @@
                 </a>
                 <a href="/reports" class="kpi-card kpi-card-sm">
                     <div class="kpi-count">{{ stats.excel_files }}</div>
-                    <div class="kpi-label">Excel Files</div>
+                    <div class="kpi-label">Generated Excel Files</div>
                 </a>
                 <a href="/settings" class="kpi-card kpi-card-sm">
                     <div class="kpi-count kpi-tone-ready">&bull;</div>
-                    <div class="kpi-label">Master Health</div>
+                    <div class="kpi-label">Master Data Health</div>
                 </a>
             </div>
         </section>
 
-        <section aria-label="Candidates by cost code">
-            <h3 class="section-heading">Candidates by Cost Code</h3>
-            <div class="settings-grid">
-                {% for cc, n in (stats.by_cost_code or {}).items() %}
-                <div class="settings-card">
-                    <div class="settings-card-title">Cost Code {{ cc }}</div>
-                    <div class="settings-card-status configured">{{ n }} candidate(s)</div>
-                    <p class="settings-card-desc">
-                        <span class="status-badge status-ready">{{ cc }}</span>
-                    </p>
+        {% if stats.total > 0 %}
+        <section aria-label="Candidates by status" class="chart-section">
+            <h3 class="section-heading">Candidates by Status</h3>
+            <div class="chart-list">
+                {% for key, label in [('draft', 'Draft'), ('ready', 'Ready'), ('generated', 'Generated'), ('needs_attention', 'Needs Attention')] %}
+                {% set n = (stats.status or {}).get(key, 0) %}
+                {% set pct = ((n / stats.total) * 100) if stats.total else 0 %}
+                <div class="chart-row">
+                    <span class="chart-label">{{ label }}</span>
+                    <div class="chart-track" role="img" aria-label="{{ label }}: {{ n }} candidates">
+                        <div class="chart-fill status-{{ key | replace('_', '-') }}" style="width: {{ pct | round(1) }}%"></div>
+                    </div>
+                    <span class="chart-value">{{ n }}</span>
                 </div>
-                {% else %}
-                <div class="ui-empty"><span class="empty-ic">&#128202;</span>No candidates yet</div>
                 {% endfor %}
             </div>
         </section>
+
+        <section aria-label="Candidates by cost code" class="chart-section">
+            <h3 class="section-heading">Candidates by Cost Code</h3>
+            <div class="chart-list">
+                {% set max_cc = (stats.by_cost_code or {}).values() | max if (stats.by_cost_code or {}) else 1 %}
+                {% for cc, n in (stats.by_cost_code or {}).items() %}
+                {% set pct = ((n / max_cc) * 100) if max_cc else 0 %}
+                <div class="chart-row">
+                    <span class="chart-label">Cost Code {{ cc }}</span>
+                    <div class="chart-track" role="img" aria-label="Cost Code {{ cc }}: {{ n }} candidates">
+                        <div class="chart-fill" style="width: {{ pct | round(1) }}%"></div>
+                    </div>
+                    <span class="chart-value">{{ n }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section aria-label="Top facilities" class="chart-section">
+            <h3 class="section-heading">Top Facilities</h3>
+            <div class="chart-list">
+                {% set max_fac = (stats.by_facility or {}).values() | max if (stats.by_facility or {}) else 1 %}
+                {% for fac, n in (stats.by_facility or {}).items() %}
+                {% set pct = ((n / max_fac) * 100) if max_fac else 0 %}
+                <div class="chart-row">
+                    <span class="chart-label">{{ fac }}</span>
+                    <div class="chart-track" role="img" aria-label="{{ fac }}: {{ n }} candidates">
+                        <div class="chart-fill" style="width: {{ pct | round(1) }}%"></div>
+                    </div>
+                    <span class="chart-value">{{ n }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+        {% else %}
+        <section class="ui-empty"><span class="empty-ic">&#128202;</span>No candidates yet. Add candidates via Smart Upload or Manual Entry to see dashboard metrics.</section>
+        {% endif %}
     </main>
 
     {% include 'partials/_toast.html' %}
