@@ -6,59 +6,62 @@
     <title>Admin Master - TeamHR Automation</title>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/ui.css">
-    <link rel="stylesheet" href="/static/manual_entry.css">
     <style>
-        .admin-tabs { display:flex; gap:6px; border-bottom:1px solid #e2e6ea; margin-bottom:20px; flex-wrap:wrap; }
-        .admin-tab { padding:10px 18px; border:1px solid #e2e6ea; border-bottom:none; background:#f7f8fa;
-                     border-radius:8px 8px 0 0; cursor:pointer; font-weight:600; color:#5f6b7a; }
-        .admin-tab.active { background:#fff; color:#1d4ed8; border-color:#1d4ed8; }
-        .admin-panel { display:none; }
-        .admin-panel.active { display:block; }
-        .toolbar { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; align-items:center; }
-        .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; font-weight:600; }
-        .badge-active { background:#e6f7ee; color:#0a7a4c; }
-        .badge-inactive { background:#fdeaea; color:#b42318; }
-        .badge-src { background:#eef2ff; color:#3730a3; }
-        .badge-override { background:#fef3c7; color:#92400e; }
-        .badge-excel { background:#f0f4ff; color:#3b5998; }
-        .badge-admin { background:#e6f7ee; color:#0a7a4c; }
-        .chips { display:flex; flex-wrap:wrap; gap:4px; }
-        .chip { background:#eef2ff; color:#3730a3; border-radius:8px; padding:1px 7px; font-size:12px; }
-        .hint { color:#8a94a6; font-size:12px; margin-top:4px; }
-        .soft-warn { border-left:4px solid #f59e0b; padding:8px 12px; background:#fffbeb; border-radius:6px; margin:8px 0; }
-        .status-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; margin-bottom:20px; }
-        .status-card { background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px; text-align:center; }
-        .status-card .val { font-size:24px; font-weight:700; color:var(--accent-blue); }
-        .status-card .lbl { font-size:12px; color:var(--text-secondary); margin-top:4px; }
-        .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
-        .form-grid label { font-size:13px; font-weight:600; color:var(--text-secondary); display:block; margin-bottom:3px; }
-        .form-grid select, .form-grid input { width:100%; padding:7px 10px; border:1px solid var(--border); border-radius:var(--radius-sm); font-size:14px; }
-        .form-grid .full { grid-column:1/-1; }
-        .btn { padding:7px 16px; border:none; border-radius:var(--radius-sm); font-weight:600; cursor:pointer; font-size:13px; }
-        .btn-primary { background:var(--accent-blue); color:#fff; }
-        .btn-primary:hover { background:var(--accent-blue-hover); }
-        .btn-danger { background:var(--accent-red); color:#fff; }
-        .btn-success { background:var(--accent-green); color:#fff; }
-        .btn-secondary { background:#e2e8f0; color:var(--text-primary); }
-        .btn-sm { padding:4px 10px; font-size:12px; }
-        .btn-group { display:flex; gap:4px; }
-        .action-bar { margin:12px 0; padding:10px; background:#f8fafc; border-radius:var(--radius-sm); border:1px solid var(--border); }
-        .data-table { width:100%; border-collapse:collapse; font-size:13px; }
-        .data-table th { background:#f1f5f9; text-align:left; padding:8px 10px; font-weight:600; color:var(--text-secondary); border-bottom:2px solid var(--border); white-space:nowrap; }
-        .data-table td { padding:7px 10px; border-bottom:1px solid var(--border); }
-        .data-table tr:hover td { background:#f8fafc; }
-        .table-wrap { overflow-x:auto; margin-bottom:16px; }
-        .admin-disabled { text-align:center; padding:60px 20px; }
-        .admin-disabled .icon { font-size:48px; margin-bottom:12px; }
-        .admin-disabled h2 { color:var(--text-secondary); margin-bottom:8px; }
-        .admin-disabled p { color:#94a3b8; }
-        .section-heading { font-size:16px; font-weight:700; margin:18px 0 10px; color:var(--text-primary); }
-        .overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:200; justify-content:center; align-items:center; }
-        .overlay.show { display:flex; }
-        .modal { background:#fff; border-radius:var(--radius); padding:24px; width:90%; max-width:600px; max-height:80vh; overflow-y:auto; box-shadow:var(--shadow-lg); }
-        .modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
-        .modal-header h3 { margin:0; }
-        .modal-close { background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-secondary); }
+        .admin-tabs{display:flex;gap:6px;border-bottom:1px solid #e2e6ea;margin-bottom:20px;flex-wrap:wrap}
+        .admin-tab{padding:10px 18px;border:1px solid #e2e6ea;border-bottom:none;background:#f7f8fa;border-radius:8px 8px 0 0;cursor:pointer;font-weight:600;color:#5f6b7a}
+        .admin-tab.active{background:#fff;color:#1d4ed8;border-color:#1d4ed8}
+        .admin-panel{display:none}
+        .admin-panel.active{display:block}
+        .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+        .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
+        .badge-active{background:#e6f7ee;color:#0a7a4c}
+        .badge-inactive{background:#fdeaea;color:#b42318}
+        .badge-src{background:#eef2ff;color:#3730a3}
+        .badge-override{background:#fef3c7;color:#92400e}
+        .badge-excel{background:#f0f4ff;color:#3b5998}
+        .badge-admin{background:#e6f7ee;color:#0a7a4c}
+        .chips{display:flex;flex-wrap:wrap;gap:4px}
+        .chip{background:#eef2ff;color:#3730a3;border-radius:8px;padding:1px 7px;font-size:12px}
+        .hint{color:#8a94a6;font-size:12px;margin-top:4px}
+        .soft-warn{border-left:4px solid #f59e0b;padding:8px 12px;background:#fffbeb;border-radius:6px;margin:8px 0}
+        .status-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+        .status-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center}
+        .status-card .val{font-size:24px;font-weight:700;color:var(--accent-blue)}
+        .status-card .lbl{font-size:12px;color:var(--text-secondary);margin-top:4px}
+        .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+        .form-grid label{font-size:13px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:3px}
+        .form-grid select,.form-grid input{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px}
+        .form-grid .full{grid-column:1/-1}
+        .btn{padding:7px 16px;border:none;border-radius:var(--radius-sm);font-weight:600;cursor:pointer;font-size:13px}
+        .btn-primary{background:var(--accent-blue);color:#fff}
+        .btn-primary:hover{background:var(--accent-blue-hover)}
+        .btn-danger{background:var(--accent-red);color:#fff}
+        .btn-success{background:var(--accent-green);color:#fff}
+        .btn-secondary{background:#e2e8f0;color:var(--text-primary)}
+        .btn-sm{padding:4px 10px;font-size:12px}
+        .btn-group{display:flex;gap:4px}
+        .table-wrap{overflow-x:auto;margin-bottom:16px}
+        .admin-disabled{text-align:center;padding:60px 20px}
+        .admin-disabled .icon{font-size:48px;margin-bottom:12px}
+        .admin-disabled h2{color:var(--text-secondary);margin-bottom:8px}
+        .admin-disabled p{color:#94a3b8}
+        .section-heading{font-size:16px;font-weight:700;margin:18px 0 10px;color:var(--text-primary)}
+        .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
+        .overlay.show{display:flex}
+        .modal{background:#fff;border-radius:var(--radius);padding:24px;width:90%;max-width:600px;max-height:80vh;overflow-y:auto;box-shadow:var(--shadow-lg)}
+        .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+        .modal-header h3{margin:0}
+        .modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-secondary)}
+        .admin-search{position:relative;max-width:300px}
+        .admin-search input{width:100%;padding:6px 12px 6px 30px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:13px}
+        .admin-search::before{content:"\1F50D";position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:12px;pointer-events:none}
+        .sort-header{cursor:pointer;user-select:none;white-space:nowrap}
+        .sort-header:hover{color:var(--accent-blue)}
+        .sort-header .sort-arrow{font-size:0.7rem;margin-left:2px;opacity:0.4}
+        .sort-header.sorted .sort-arrow{opacity:1;color:var(--accent-blue)}
+        .page-btn{padding:3px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-card,#fff);cursor:pointer;font-size:12px;color:var(--text-secondary)}
+        .page-btn.active{background:var(--accent-blue);color:#fff;border-color:var(--accent-blue)}
+        .page-info{font-size:12px;color:var(--text-secondary);margin:0 6px}
     </style>
 </head>
 <body>
@@ -95,7 +98,16 @@
             <p class="hint">Merged view: Excel master + admin overrides. Filter to see Flipkart/Myntra, Last Mile/First Mile, Active/Inactive.</p>
 
             <div class="toolbar">
-                <select id="facFilter" class="btn btn-secondary">
+                <div class="admin-search">
+                    <input type="text" id="facSearch" placeholder="Search facilities..." aria-label="Search facilities">
+                </div>
+                <div class="filter-chips" id="facSourceFilter" role="group" aria-label="Filter by source">
+                    <button class="filter-chip active" data-source="all" onclick="filterFacSource('all')">All Sources</button>
+                    <button class="filter-chip" data-source="Excel" onclick="filterFacSource('Excel')">Excel</button>
+                    <button class="filter-chip" data-source="Admin" onclick="filterFacSource('Admin')">Admin</button>
+                    <button class="filter-chip" data-source="Override" onclick="filterFacSource('Override')">Override</button>
+                </div>
+                <select id="facFilter" class="btn btn-secondary" aria-label="Filter by entity/type">
                     <option value="All">All</option>
                     <option value="Flipkart">Flipkart</option>
                     <option value="Myntra">Myntra</option>
@@ -111,12 +123,12 @@
                 <table class="data-table" id="effectiveFacTable">
                     <thead>
                         <tr>
-                            <th>Facility Name</th>
-                            <th>Entity</th>
-                            <th>Operation</th>
-                            <th>Cost Code</th>
-                            <th>Location</th>
-                            <th>State</th>
+                            <th class="sort-header" data-col="facility_name" onclick="sortFacTable('facility_name')">Facility Name <span class="sort-arrow">&#9650;</span></th>
+                            <th class="sort-header" data-col="entity" onclick="sortFacTable('entity')">Entity <span class="sort-arrow">&#9650;</span></th>
+                            <th class="sort-header" data-col="operation" onclick="sortFacTable('operation')">Operation <span class="sort-arrow">&#9650;</span></th>
+                            <th class="sort-header" data-col="cost_code" onclick="sortFacTable('cost_code')">Cost Code <span class="sort-arrow">&#9650;</span></th>
+                            <th class="sort-header" data-col="location" onclick="sortFacTable('location')">Location <span class="sort-arrow">&#9650;</span></th>
+                            <th class="sort-header" data-col="state" onclick="sortFacTable('state')">State <span class="sort-arrow">&#9650;</span></th>
                             <th>Type</th>
                             <th>Active</th>
                             <th>Source</th>
@@ -124,7 +136,10 @@
                     </thead>
                     <tbody>
                         {% for f in facilities %}
-                        <tr>
+                        <tr data-source="{{ (f.get('source','') | lower) }}"
+                            data-entity="{{ f.get('entity','') }}"
+                            data-operation="{{ f.get('operation','') }}"
+                            data-active="{{ '1' if f.get('active', 1) else '0' }}">
                             <td>{{ f.get('facility_name', '') }}</td>
                             <td>{{ f.get('entity', '') }}</td>
                             <td>{{ f.get('operation', '') }}</td>
@@ -146,12 +161,13 @@
                     </tbody>
                 </table>
             </div>
+            <div class="pagination" id="facPagination"></div>
 
             <div class="section-heading">Admin Facility Records ({{ admin_facilities|length }})</div>
             <p class="hint">All admin-managed facilities including inactive. Edit, deactivate, or reactivate.</p>
 
             <div class="table-wrap">
-                <table class="data-table">
+                <table class="data-table" id="adminFacTable">
                     <thead>
                         <tr>
                             <th>ID</th>
@@ -199,15 +215,18 @@
             <p class="hint">Roles managed via the admin panel. Add, edit, deactivate.</p>
 
             <div class="toolbar">
+                <div class="admin-search">
+                    <input type="text" id="roleSearch" placeholder="Search roles..." aria-label="Search roles">
+                </div>
                 <button class="btn btn-primary" onclick="openAddRole()">+ Add Role</button>
             </div>
 
             <div class="table-wrap">
-                <table class="data-table">
+                <table class="data-table" id="adminRolesTable">
                     <thead>
                         <tr>
                             <th>ID</th>
-                            <th>Role Name</th>
+                            <th class="sort-header" onclick="sortRoleTable('official_name')">Role Name <span class="sort-arrow">&#9650;</span></th>
                             <th>Entity</th>
                             <th>Operation</th>
                             <th>Cost Codes</th>
@@ -219,7 +238,7 @@
                     </thead>
                     <tbody>
                         {% for r in roles %}
-                        <tr>
+                        <tr data-name="{{ (r.get('official_name','') | lower) }}">
                             <td>{{ r.get('role_id', '') }}</td>
                             <td>{{ r.get('official_name', '') }}</td>
                             <td>{{ r.get('entity_scope', '') }}</td>
@@ -272,47 +291,32 @@
         <div class="admin-panel {% if tab == 'master-import' %}active{% endif %}" id="panel-master-import" role="tabpanel">
             <div class="section-heading">Master Data Status</div>
             <div class="status-grid">
-                <div class="status-card">
-                    <div class="val">{{ master_status.get('excel_facilities', 0) }}</div>
-                    <div class="lbl">Excel Facilities</div>
-                </div>
-                <div class="status-card">
-                    <div class="val">{{ master_status.get('admin_facilities', 0) }}</div>
-                    <div class="lbl">Admin Facilities (Active)</div>
-                </div>
-                <div class="status-card">
-                    <div class="val">{{ master_status.get('effective_facilities', 0) }}</div>
-                    <div class="lbl">Effective Facilities</div>
-                </div>
-                <div class="status-card">
-                    <div class="val">{{ master_status.get('overrides', 0) }}</div>
-                    <div class="lbl">Admin Overrides</div>
-                </div>
-                <div class="status-card">
-                    <div class="val">{{ master_status.get('excel_roles', 0) }}</div>
-                    <div class="lbl">Excel Roles</div>
-                </div>
-                <div class="status-card">
-                    <div class="val">{{ master_status.get('admin_roles', 0) }}</div>
-                    <div class="lbl">Admin Roles (Active)</div>
-                </div>
-                <div class="status-card">
-                    <div class="val">{{ master_status.get('effective_roles', 0) }}</div>
-                    <div class="lbl">Effective Roles</div>
-                </div>
+                <div class="status-card"><div class="val">{{ master_status.get('excel_facilities', 0) }}</div><div class="lbl">Excel Facilities</div></div>
+                <div class="status-card"><div class="val">{{ master_status.get('admin_facilities', 0) }}</div><div class="lbl">Admin Facilities (Active)</div></div>
+                <div class="status-card"><div class="val">{{ master_status.get('effective_facilities', 0) }}</div><div class="lbl">Effective Facilities</div></div>
+                <div class="status-card"><div class="val">{{ master_status.get('overrides', 0) }}</div><div class="lbl">Admin Overrides</div></div>
+                <div class="status-card"><div class="val">{{ master_status.get('excel_roles', 0) }}</div><div class="lbl">Excel Roles</div></div>
+                <div class="status-card"><div class="val">{{ master_status.get('admin_roles', 0) }}</div><div class="lbl">Admin Roles (Active)</div></div>
+                <div class="status-card"><div class="val">{{ master_status.get('effective_roles', 0) }}</div><div class="lbl">Effective Roles</div></div>
+            </div>
+
+            {# ── Import preview panel ───────────────────────────── #}
+            <div class="section-heading">Import Preview</div>
+            <p class="hint">Dry-run: read Excel files to see what would change. No data is modified.</p>
+            <div class="toolbar">
+                <button class="btn btn-primary" id="btnPreviewImport" onclick="previewImport()">Preview Import</button>
+                <button class="btn btn-success" id="btnApplyImport" onclick="applyImport()" style="display:none">Apply Import</button>
+            </div>
+            <div id="importPreviewResult" class="import-preview" style="display:none">
+                <div class="import-counts" id="importCounts"></div>
+                <p id="importPreviewMsg" class="hint"></p>
             </div>
 
             <div class="section-heading">Excel Facilities (read-only) &mdash; {{ excel_facilities|length }}</div>
             <div class="table-wrap">
                 <table class="data-table">
                     <thead>
-                        <tr>
-                            <th>Facility Name</th>
-                            <th>Entity</th>
-                            <th>Operation</th>
-                            <th>Cost Code</th>
-                            <th>Location</th>
-                        </tr>
+                        <tr><th>Facility Name</th><th>Entity</th><th>Operation</th><th>Cost Code</th><th>Location</th></tr>
                     </thead>
                     <tbody>
                         {% for f in excel_facilities %}
@@ -354,14 +358,8 @@
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th>#</th>
-                            <th>Timestamp</th>
-                            <th>Actor</th>
-                            <th>Type</th>
-                            <th>Record ID</th>
-                            <th>Action</th>
-                            <th>Old Value</th>
-                            <th>New Value</th>
+                            <th>#</th><th>Timestamp</th><th>Actor</th><th>Type</th>
+                            <th>Record ID</th><th>Action</th><th>Old Value</th><th>New Value</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -389,10 +387,10 @@
 
     {# ── ADD FACILITY MODAL ────────────────────────────────────────── #}
     <div class="overlay" id="addFacOverlay">
-        <div class="modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Add facility">
             <div class="modal-header">
                 <h3>Add Facility</h3>
-                <button class="modal-close" onclick="closeModal('addFacOverlay')">&times;</button>
+                <button class="modal-close" onclick="TeamHR.closeModal('addFacOverlay')" aria-label="Close">&times;</button>
             </div>
             <form id="addFacForm" onsubmit="submitAddFacility(event)">
                 <div class="form-grid">
@@ -424,8 +422,8 @@
                         <input type="text" name="state">
                     </label>
                 </div>
-                <div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('addFacOverlay')">Cancel</button>
+                <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+                    <button type="button" class="btn btn-secondary" onclick="TeamHR.closeModal('addFacOverlay')">Cancel</button>
                     <button type="submit" class="btn btn-primary">Add Facility</button>
                 </div>
             </form>
@@ -434,10 +432,10 @@
 
     {# ── EDIT FACILITY MODAL ───────────────────────────────────────── #}
     <div class="overlay" id="editFacOverlay">
-        <div class="modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Edit facility">
             <div class="modal-header">
                 <h3>Edit Facility</h3>
-                <button class="modal-close" onclick="closeModal('editFacOverlay')">&times;</button>
+                <button class="modal-close" onclick="TeamHR.closeModal('editFacOverlay')" aria-label="Close">&times;</button>
             </div>
             <form id="editFacForm" onsubmit="submitEditFacility(event)">
                 <input type="hidden" name="facility_id" id="editFacId">
@@ -456,8 +454,8 @@
                     </label>
                 </div>
                 <div class="soft-warn">Identity fields (name, entity, operation, cost code) are immutable. Deactivate and create a new facility if needed.</div>
-                <div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('editFacOverlay')">Cancel</button>
+                <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+                    <button type="button" class="btn btn-secondary" onclick="TeamHR.closeModal('editFacOverlay')">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
                 </div>
             </form>
@@ -466,10 +464,10 @@
 
     {# ── ADD ROLE MODAL ────────────────────────────────────────────── #}
     <div class="overlay" id="addRoleOverlay">
-        <div class="modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Add role">
             <div class="modal-header">
                 <h3>Add Role</h3>
-                <button class="modal-close" onclick="closeModal('addRoleOverlay')">&times;</button>
+                <button class="modal-close" onclick="TeamHR.closeModal('addRoleOverlay')" aria-label="Close">&times;</button>
             </div>
             <form id="addRoleForm" onsubmit="submitAddRole(event)">
                 <div class="form-grid">
@@ -496,8 +494,8 @@
                         <textarea name="aliases" rows="2" placeholder="e.g. Delivery Boy, DH Partner"></textarea>
                     </label>
                 </div>
-                <div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('addRoleOverlay')">Cancel</button>
+                <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+                    <button type="button" class="btn btn-secondary" onclick="TeamHR.closeModal('addRoleOverlay')">Cancel</button>
                     <button type="submit" class="btn btn-primary">Add Role</button>
                 </div>
             </form>
@@ -506,10 +504,10 @@
 
     {# ── EDIT ROLE MODAL ───────────────────────────────────────────── #}
     <div class="overlay" id="editRoleOverlay">
-        <div class="modal">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Edit role">
             <div class="modal-header">
                 <h3>Edit Role</h3>
-                <button class="modal-close" onclick="closeModal('editRoleOverlay')">&times;</button>
+                <button class="modal-close" onclick="TeamHR.closeModal('editRoleOverlay')" aria-label="Close">&times;</button>
             </div>
             <form id="editRoleForm" onsubmit="submitEditRole(event)">
                 <input type="hidden" name="role_id" id="editRoleId">
@@ -540,8 +538,8 @@
                         </select>
                     </label>
                 </div>
-                <div style="margin-top:14px; display:flex; gap:8px; justify-content:flex-end;">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('editRoleOverlay')">Cancel</button>
+                <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
+                    <button type="button" class="btn btn-secondary" onclick="TeamHR.closeModal('editRoleOverlay')">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
                 </div>
             </form>
@@ -552,33 +550,14 @@
 
     <script>
     (function() {
-        /* ── Combos data for auto cost-code ── */
         var combos = [
             {% for c in combos %}
             { entity: {{ c.entity|tojson }}, operation: {{ c.operation|tojson }}, cost_code: {{ c.cost_code|tojson }} }{% if not loop.last %},{% endif %}
             {% endfor %}
         ];
 
-        function escapeHtml(s) {
-            var d = document.createElement('div');
-            d.appendChild(document.createTextNode(s));
-            return d.innerHTML;
-        }
-
-        function toast(msg, ok) {
-            if (typeof window.showToast === 'function') { window.showToast(msg, ok); return; }
-            var c = document.getElementById('toastContainer');
-            if (!c) return;
-            var t = document.createElement('div');
-            t.className = 'toast ' + (ok ? 'toast-success' : 'toast-error');
-            t.textContent = msg;
-            c.appendChild(t);
-            setTimeout(function(){ t.remove(); }, 4000);
-        }
-
-        function openModal(id) { document.getElementById(id).classList.add('show'); }
-        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
-        window.closeModal = closeModal;
+        function escapeHtml(s) { var d = document.createElement('div'); d.appendChild(document.createTextNode(s)); return d.innerHTML; }
+        function toast(msg, ok) { if (typeof window.showToast === 'function') { window.showToast(msg, ok); } }
 
         /* ── Tab switching ── */
         document.querySelectorAll('.admin-tab').forEach(function(btn) {
@@ -593,7 +572,7 @@
             });
         });
 
-        /* ── Facility filter (client-side for effective table) ── */
+        /* ── Facility filter (existing dropdown) ── */
         var facFilter = document.getElementById('facFilter');
         if (facFilter) {
             facFilter.addEventListener('change', function() {
@@ -602,6 +581,90 @@
             var params = new URLSearchParams(window.location.search);
             if (params.get('fac_filter')) facFilter.value = params.get('fac_filter');
         }
+
+        /* ── Facility search (client-side) ── */
+        var facSearch = document.getElementById('facSearch');
+        if (facSearch) {
+            facSearch.addEventListener('input', function() {
+                var q = this.value.toLowerCase();
+                var rows = document.querySelectorAll('#effectiveFacTable tbody tr');
+                for (var i = 0; i < rows.length; i++) {
+                    var text = rows[i].textContent.toLowerCase();
+                    rows[i].style.display = text.indexOf(q) > -1 ? '' : 'none';
+                }
+            });
+        }
+
+        /* ── Facility source filter chips ── */
+        window.filterFacSource = function(source) {
+            var chips = document.querySelectorAll('#facSourceFilter .filter-chip');
+            for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+            document.querySelector('[data-source="' + source + '"]').classList.add('active');
+            var rows = document.querySelectorAll('#effectiveFacTable tbody tr');
+            for (var j = 0; j < rows.length; j++) {
+                var src = rows[j].getAttribute('data-source') || '';
+                var show = source === 'all' || src.indexOf(source.toLowerCase()) > -1;
+                rows[j].style.display = show ? '' : 'none';
+            }
+        };
+
+        /* ── Facility sort ── */
+        var facSortCol = '', facSortAsc = true;
+        window.sortFacTable = function(col) {
+            if (facSortCol === col) facSortAsc = !facSortAsc; else { facSortCol = col; facSortAsc = true; }
+            var tbody = document.querySelector('#effectiveFacTable tbody');
+            var rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort(function(a, b) {
+                var av = a.cells[Array.from(a.parentElement.parentElement.querySelector('thead tr').cells).indexOf(document.querySelector('#effectiveFacTable th[data-col="' + col + '"]'))] ? a.cells[Array.from(a.parentElement.parentElement.querySelector('thead tr').cells).indexOf(document.querySelector('#effectiveFacTable th[data-col="' + col + '"]'))].textContent.trim() : '';
+                var bv = b.cells[Array.from(b.parentElement.parentElement.querySelector('thead tr').cells).indexOf(document.querySelector('#effectiveFacTable th[data-col="' + col + '"]'))] ? b.cells[Array.from(b.parentElement.parentElement.querySelector('thead tr').cells).indexOf(document.querySelector('#effectiveFacTable th[data-col="' + col + '"]'))].textContent.trim() : '';
+                return facSortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+            });
+            rows.forEach(function(r) { tbody.appendChild(r); });
+            document.querySelectorAll('#effectiveFacTable th.sort-header').forEach(function(th) { th.classList.remove('sorted'); });
+            document.querySelector('#effectiveFacTable th[data-col="' + col + '"]').classList.add('sorted');
+        };
+
+        /* ── Import preview / apply ── */
+        window.previewImport = function() {
+            var btn = document.getElementById('btnPreviewImport');
+            btn.disabled = true; btn.textContent = 'Previewing...';
+            fetch('/api/admin/import-preview', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                btn.disabled = false; btn.textContent = 'Preview Import';
+                if (d.ok && d.result) {
+                    var r = d.result;
+                    var html = '';
+                    if (r.new_count) html += '<div class="import-count ic-new"><span class="ic-val">' + r.new_count + '</span>New</div>';
+                    if (r.changed_count) html += '<div class="import-count ic-changed"><span class="ic-val">' + r.changed_count + '</span>Changed</div>';
+                    if (r.unchanged_count) html += '<div class="import-count ic-unchanged"><span class="ic-val">' + r.unchanged_count + '</span>Unchanged</div>';
+                    if (r.duplicate_count) html += '<div class="import-count ic-dup"><span class="ic-val">' + r.duplicate_count + '</span>Duplicate</div>';
+                    if (r.invalid_count) html += '<div class="import-count ic-invalid"><span class="ic-val">' + r.invalid_count + '</span>Invalid</div>';
+                    if (r.override_conflict_count) html += '<div class="import-count ic-conflict"><span class="ic-val">' + r.override_conflict_count + '</span>Conflicts</div>';
+                    document.getElementById('importCounts').innerHTML = html || '<div class="hint">No changes detected</div>';
+                    document.getElementById('importPreviewMsg').textContent = r.message || '';
+                    document.getElementById('importPreviewResult').style.display = '';
+                    document.getElementById('btnApplyImport').style.display = (r.new_count || r.changed_count) ? '' : 'none';
+                } else {
+                    toast(d.error || 'Preview failed', false);
+                }
+            })
+            .catch(function() { btn.disabled = false; btn.textContent = 'Preview Import'; toast('Network error', false); });
+        };
+
+        window.applyImport = function() {
+            if (!confirm('Apply master import? This will update facilities and roles.')) return;
+            var btn = document.getElementById('btnApplyImport');
+            btn.disabled = true; btn.textContent = 'Applying...';
+            fetch('/api/admin/import-apply', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                btn.disabled = false; btn.textContent = 'Apply Import';
+                if (d.ok) { toast('Import applied', true); setTimeout(function() { location.reload(); }, 800); }
+                else toast(d.error || 'Apply failed', false);
+            })
+            .catch(function() { btn.disabled = false; btn.textContent = 'Apply Import'; toast('Network error', false); });
+        };
 
         /* ── Auto derive cost code ── */
         function lookupCostCode(entity, operation) {
@@ -617,7 +680,7 @@
         };
 
         /* ── Add Facility ── */
-        window.openAddFacility = function() { updateAddFacCostCode(); openModal('addFacOverlay'); };
+        window.openAddFacility = function() { updateAddFacCostCode(); TeamHR.openModal('addFacOverlay'); };
         window.submitAddFacility = function(ev) {
             ev.preventDefault();
             var f = ev.target;
@@ -630,9 +693,9 @@
             fetch('/api/admin/facilities', {
                 method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
             }).then(function(r){ return r.json(); }).then(function(d){
-                if (d.ok) { toast('Facility added (id ' + d.facility_id + ')', true); closeModal('addFacOverlay'); setTimeout(function(){ location.reload(); }, 800); }
+                if (d.ok) { toast('Facility added (id ' + d.facility_id + ')', true); TeamHR.closeModal('addFacOverlay'); setTimeout(function(){ location.reload(); }, 800); }
                 else { toast(d.errors ? d.errors.join('; ') : 'Failed', false); }
-            }).catch(function(e){ toast('Network error', false); });
+            }).catch(function(){ toast('Network error', false); });
         };
 
         /* ── Edit Facility ── */
@@ -641,7 +704,7 @@
             document.getElementById('editFacLocation').value = loc;
             document.getElementById('editFacState').value = state;
             document.getElementById('editFacActive').value = active ? '1' : '0';
-            openModal('editFacOverlay');
+            TeamHR.openModal('editFacOverlay');
         };
         window.submitEditFacility = function(ev) {
             ev.preventDefault();
@@ -655,9 +718,9 @@
             fetch('/api/admin/facilities/' + id, {
                 method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
             }).then(function(r){ return r.json(); }).then(function(d){
-                if (d.ok) { toast('Facility updated', true); closeModal('editFacOverlay'); setTimeout(function(){ location.reload(); }, 800); }
+                if (d.ok) { toast('Facility updated', true); TeamHR.closeModal('editFacOverlay'); setTimeout(function(){ location.reload(); }, 800); }
                 else { toast(d.errors ? d.errors.join('; ') : 'Update failed', false); }
-            }).catch(function(e){ toast('Network error', false); });
+            }).catch(function(){ toast('Network error', false); });
         };
 
         /* ── Deactivate / Activate Facility ── */
@@ -678,7 +741,7 @@
         };
 
         /* ── Add Role ── */
-        window.openAddRole = function() { openModal('addRoleOverlay'); };
+        window.openAddRole = function() { TeamHR.openModal('addRoleOverlay'); };
         window.submitAddRole = function(ev) {
             ev.preventDefault();
             var f = ev.target;
@@ -690,12 +753,12 @@
             fetch('/api/admin/roles', {
                 method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
             }).then(function(r){ return r.json(); }).then(function(d){
-                if (d.ok) { toast('Role added (id ' + d.role_id + ')', true); closeModal('addRoleOverlay'); setTimeout(function(){ location.reload(); }, 800); }
+                if (d.ok) { toast('Role added (id ' + d.role_id + ')', true); TeamHR.closeModal('addRoleOverlay'); setTimeout(function(){ location.reload(); }, 800); }
                 else { toast(d.errors ? d.errors.join('; ') : 'Failed', false); }
-            }).catch(function(e){ toast('Network error', false); });
+            }).catch(function(){ toast('Network error', false); });
         };
 
-        /* ── Edit Role (fetch current data then open) ── */
+        /* ── Edit Role ── */
         window.openEditRole = function(roleId) {
             fetch('/api/admin/roles/' + roleId).then(function(r){ return r.json(); }).then(function(d){
                 document.getElementById('editRoleId').value = d.role_id || roleId;
@@ -704,8 +767,8 @@
                 document.getElementById('editRoleCostCodes').value = (d.cost_codes || []).join(' ');
                 document.getElementById('editRoleAliases').value = (d.aliases || []).join(', ');
                 document.getElementById('editRoleActive').value = d.active ? '1' : '0';
-                openModal('editRoleOverlay');
-            }).catch(function(e){ toast('Failed to load role', false); });
+                TeamHR.openModal('editRoleOverlay');
+            }).catch(function(){ toast('Failed to load role', false); });
         };
         window.submitEditRole = function(ev) {
             ev.preventDefault();
@@ -719,9 +782,9 @@
             fetch('/api/admin/roles/' + id, {
                 method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
             }).then(function(r){ return r.json(); }).then(function(d){
-                if (d.ok) { toast('Role updated', true); closeModal('editRoleOverlay'); setTimeout(function(){ location.reload(); }, 800); }
+                if (d.ok) { toast('Role updated', true); TeamHR.closeModal('editRoleOverlay'); setTimeout(function(){ location.reload(); }, 800); }
                 else { toast(d.errors ? d.errors.join('; ') : 'Update failed', false); }
-            }).catch(function(e){ toast('Network error', false); });
+            }).catch(function(){ toast('Network error', false); });
         };
 
         /* ── Deactivate / Activate Role ── */

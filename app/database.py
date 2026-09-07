@@ -398,6 +398,17 @@ def init_db() -> None:
                 created_at TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_system_events_type ON system_events(event_type);
+
+            CREATE TABLE IF NOT EXISTS saved_views (
+                view_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+                view_name   TEXT NOT NULL,
+                page        TEXT NOT NULL DEFAULT 'candidates',
+                view_def    TEXT NOT NULL DEFAULT '{}',
+                is_default  INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT,
+                updated_at  TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_saved_views_page ON saved_views(page);
             """
         )
 
@@ -2189,6 +2200,236 @@ def list_system_events(limit: int = 100) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT * FROM system_events ORDER BY event_id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ── Saved views / filters ─────────────────────────────────────────────────────
+# Views store ONLY safe filter definitions (page, status, entity, operation,
+# facility, cost_code, role, batch, search, today). NEVER Aadhaar/address.
+
+
+def create_saved_view(view_name: str, page: str, view_def: dict) -> int:
+    """Create a saved view. If it would be the first view for a page it becomes
+    the default; otherwise only an explicit set_default marks one."""
+    conn = _get_connection()
+    try:
+        now = _now()
+        before = conn.execute("SELECT COUNT(*) FROM saved_views WHERE page = ?",
+                              (page,)).fetchone()[0]
+        is_default = 1 if before == 0 else 0
+        cur = conn.execute(
+            "INSERT INTO saved_views (view_name, page, view_def, is_default, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (view_name.strip(), page, json.dumps(view_def or {}), is_default, now, now),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def list_saved_views(page: str = "") -> list[dict]:
+    """Return saved views for a page (or all pages). Safe def fields only."""
+    conn = _get_connection()
+    try:
+        if page:
+            rows = conn.execute(
+                "SELECT * FROM saved_views WHERE page = ? ORDER BY is_default DESC, "
+                "view_id ASC", (page,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM saved_views ORDER BY page ASC, view_id ASC"
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["view_def"] = json.loads(d.get("view_def") or "{}")
+            except (TypeError, ValueError):
+                d["view_def"] = {}
+            out.append(d)
+        return out
+    finally:
+        conn.close()
+
+
+def get_saved_view(view_id: int) -> Optional[dict]:
+    conn = _get_connection()
+    try:
+        row = conn.execute("SELECT * FROM saved_views WHERE view_id = ?",
+                           (view_id,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["view_def"] = json.loads(d.get("view_def") or "{}")
+        except (TypeError, ValueError):
+            d["view_def"] = {}
+        return d
+    finally:
+        conn.close()
+
+
+def update_saved_view(view_id: int, view_name: Optional[str] = None,
+                      view_def: Optional[dict] = None) -> bool:
+    conn = _get_connection()
+    try:
+        sets: list[str] = []
+        values: list = []
+        if view_name is not None:
+            sets.append("view_name = ?")
+            values.append(view_name.strip())
+        if view_def is not None:
+            sets.append("view_def = ?")
+            values.append(json.dumps(view_def or {}))
+        if not sets:
+            return False
+        sets.append("updated_at = ?")
+        values.append(_now())
+        values.append(view_id)
+        cur = conn.execute(
+            f"UPDATE saved_views SET {', '.join(sets)} WHERE view_id = ?", values)
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def delete_saved_view(view_id: int) -> bool:
+    conn = _get_connection()
+    try:
+        cur = conn.execute("DELETE FROM saved_views WHERE view_id = ?", (view_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def set_default_saved_view(view_id: int, page: str) -> bool:
+    """Make one view the default for a page (clears others). Returns False if
+    the view does not exist."""
+    conn = _get_connection()
+    try:
+        row = conn.execute("SELECT view_id FROM saved_views WHERE view_id = ?",
+                           (view_id,)).fetchone()
+        if not row:
+            return False
+        conn.execute("UPDATE saved_views SET is_default = 0 WHERE page = ?", (page,))
+        conn.execute("UPDATE saved_views SET is_default = 1 WHERE view_id = ?",
+                     (view_id,))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def get_default_saved_view(page: str) -> Optional[dict]:
+    conn = _get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM saved_views WHERE page = ? AND is_default = 1 "
+            "ORDER BY view_id DESC LIMIT 1", (page,),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["view_def"] = json.loads(d.get("view_def") or "{}")
+        except (TypeError, ValueError):
+            d["view_def"] = {}
+        return d
+    finally:
+        conn.close()
+
+
+# ── Bulk / quick action helpers (safe sets only) ─────────────────────────────
+
+
+def bulk_mark_needs_review(candidate_ids: list[int]) -> tuple[int, list[dict]]:
+    """Mark candidates 'needs_review' (non-destructive). Returns (updated, errors).
+    Never touches identity or portal-started candidates."""
+    conn = _get_connection()
+    updated = 0
+    errors: list[dict] = []
+    for cid in candidate_ids:
+        row = conn.execute(
+            "SELECT candidate_id, status FROM candidates WHERE candidate_id = ?",
+            (cid,),
+        ).fetchone()
+        if not row:
+            errors.append({"candidate_id": cid, "error": "Not found"})
+            continue
+        status = (row["status"] or "").lower()
+        if status in ("generated", "portal_pending", "portal_success",
+                      "portal_failed"):
+            errors.append({"candidate_id": cid,
+                           "error": f"Cannot mark '{status}' candidate for review"})
+            continue
+        conn.execute("UPDATE candidates SET status = 'needs_review', updated_at = ? "
+                     "WHERE candidate_id = ?", (_now(), cid))
+        conn.execute(
+            "INSERT INTO candidate_events (candidate_id, event_type, summary, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (cid, "Marked for Review", "Candidate flagged for review via bulk action.", _now()),
+        )
+        updated += 1
+    conn.commit()
+    conn.close()
+    return updated, errors
+
+
+def bulk_add_to_batch(candidate_ids: list[int], batch_id: int) -> tuple[int, list[dict]]:
+    """Add READY candidates to a batch (creating it if needed). Safe per-candidate
+    validation: only status == ready is eligible."""
+    conn = _get_connection()
+    _ensure_batch(conn, batch_id)
+    updated = 0
+    errors: list[dict] = []
+    for cid in candidate_ids:
+        row = conn.execute(
+            "SELECT candidate_id, status, batch_id FROM candidates WHERE candidate_id = ?",
+            (cid,),
+        ).fetchone()
+        if not row:
+            errors.append({"candidate_id": cid, "error": "Not found"})
+            continue
+        if (row["status"] or "").lower() != "ready":
+            errors.append({"candidate_id": cid,
+                           "error": "Only Ready candidates can be added to a batch"})
+            continue
+        conn.execute("UPDATE candidates SET batch_id = ?, updated_at = ? "
+                     "WHERE candidate_id = ?", (batch_id, _now(), cid))
+        conn.execute(
+            "INSERT INTO candidate_events (candidate_id, event_type, summary, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (cid, "Batch Updated",
+             f"Candidate added to batch {batch_id} via bulk action.", _now()),
+        )
+        updated += 1
+    conn.commit()
+    record_batch_event(batch_id, "Bulk Add",
+                       f"Added {updated} candidate(s) to batch via bulk action.")
+    conn.close()
+    return updated, errors
+
+
+def get_candidates_safe(candidate_ids: list[int]) -> list[dict]:
+    """Return SAFE export fields for selected candidates (no Aadhaar/address)."""
+    conn = _get_connection()
+    try:
+        if not candidate_ids:
+            return []
+        placeholders = ", ".join("?" for _ in candidate_ids)
+        rows = conn.execute(
+            "SELECT candidate_id, name, mobile, entity, operation, cost_code, "
+            "designation, facility_name, location_code, salary, salary_display, "
+            "status, batch_id, portal_status "
+            "FROM candidates WHERE candidate_id IN (" + placeholders + ") "
+            "ORDER BY candidate_id", candidate_ids,
         ).fetchall()
         return [dict(r) for r in rows]
     finally:

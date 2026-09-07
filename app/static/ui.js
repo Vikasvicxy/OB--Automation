@@ -1,6 +1,7 @@
 /* ─────────────────────────────────────────────────────────────
    TeamHR shared UI behaviours
-   Toasts · global search · keyboard shortcuts · sidebar groups
+   Toasts · modals/confirm · global search · keyboard shortcuts
+   sidebar groups · loading helpers · focus trap
    Framework-agnostic; safe to load on every page.
    ───────────────────────────────────────────────────────────── */
 (function () {
@@ -33,7 +34,6 @@
     }
     window.TeamHR = window.TeamHR || {};
     window.TeamHR.toast = toast;
-    // Also share the classic name used by existing pages if function absent.
     if (typeof window.showToast !== "function") window.showToast = toast;
 
     /* ── Sidebar collapsible groups ───────────────────────── */
@@ -47,7 +47,6 @@
                 try { localStorage.setItem("thr-sb-" + (btn.getAttribute("data-group") || "g"), wasOpen ? "0" : "1"); } catch (e) {}
             });
         });
-        // Restore open state; default the first group open only if none stored.
         document.querySelectorAll(".nav-group").forEach(function (g) {
             var key = "thr-sb-" + (g.querySelector(".nav-group-toggle").getAttribute("data-group") || "g");
             var saved = null;
@@ -157,12 +156,117 @@
         });
     }
 
+    /* ── Shared modal / confirm helpers ───────────────────── */
+    // Works with both <div class="overlay" id="..."> (admin_master style) and
+    // <div class="modal-overlay" id="..."> (new shared pattern).
+    function openModal(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.classList.add("show");
+        document.body.classList.add("modal-open");
+        try {
+            var focusable = el.querySelector("button, [href], input:not([type='hidden']), select, textarea, [tabindex]:not([tabindex='-1'])");
+            if (focusable) setTimeout(function () { try { focusable.focus(); } catch (e) {} }, 60);
+        } catch (e) {}
+    }
+    function closeModal(id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove("show");
+        document.body.classList.remove("modal-open");
+    }
+    function closeAllModals() {
+        document.querySelectorAll(".overlay.show, .modal-overlay.open, .drawer.open").forEach(function (el) {
+            el.classList.remove("show");
+            el.classList.remove("open");
+        });
+        document.body.classList.remove("modal-open");
+    }
+    window.openModal = openModal;
+    window.closeModal = closeModal;
+
+    /* Confirm dialog (replaces native confirm; returns a Promise) */
+    function confirmPromise(message) {
+        return new Promise(function (resolve) {
+            var id = "thr-confirm-dialog";
+            var existing = document.getElementById(id);
+            if (existing) existing.remove();
+            var overlay = document.createElement("div");
+            overlay.id = id;
+            overlay.className = "overlay show";
+            overlay.innerHTML =
+                "<div class='modal' role='dialog' aria-modal='true' aria-label='Confirm action'>" +
+                "  <div class='modal-header'><h3>Confirm</h3>" +
+                "    <button class='modal-close' data-action='cancel' aria-label='Close'>&times;</button>" +
+                "  </div>" +
+                "  <p class='confirm-message'>" + escapeHtml(message) + "</p>" +
+                "  <div style='margin-top:16px;display:flex;gap:8px;justify-content:flex-end'>" +
+                "    <button class='btn btn-secondary' data-action='cancel'>Cancel</button>" +
+                "    <button class='btn btn-primary' data-action='confirm'>Confirm</button>" +
+                "  </div>" +
+                "</div>";
+            document.body.appendChild(overlay);
+            document.body.classList.add("modal-open");
+            function finish(val) { overlay.remove(); document.body.classList.remove("modal-open"); resolve(val); }
+            overlay.querySelector("[data-action='cancel']").addEventListener("click", function () { finish(false); });
+            overlay.querySelector("[data-action='confirm']").addEventListener("click", function () { finish(true); });
+            overlay.querySelector(".modal-close").addEventListener("click", function () { finish(false); });
+            overlay.addEventListener("click", function (e) { if (e.target === overlay) finish(false); });
+            setTimeout(function () {
+                try { overlay.querySelector("[data-action='confirm']").focus(); } catch (e) {}
+            }, 60);
+        });
+    }
+    window.TeamHR.confirmPromise = confirmPromise;
+    // Backward compat: existing pages using window.confirm will still work, but
+    // new code should prefer TeamHR.confirmPromise.
+    window.thrConfirm = function (message, callback) {
+        confirmPromise(message).then(function (ok) { if (callback) callback(ok); });
+    };
+
+    /* ── Loading / empty / error state helpers ────────────── */
+    function showLoading(el, msg) {
+        if (!el) return;
+        el.setAttribute("data-thr-original", el.innerHTML);
+        el.innerHTML = "<div class='thr-loading-state'>" +
+            "<span class='spinner'></span> <span>" + escapeHtml(msg || "Loading") + "&hellip;</span></div>";
+    }
+    function hideLoading(el) {
+        if (!el) return;
+        var orig = el.getAttribute("data-thr-original");
+        if (orig != null) { el.innerHTML = orig; el.removeAttribute("data-thr-original"); }
+    }
+    function showEmpty(el, msg, icon) {
+        if (!el) return;
+        el.innerHTML = "<div class='thr-empty-state'><span class='thr-empty-ic'>" +
+            (icon || "\u26AB") + "</span><span class='thr-empty-msg'>" + escapeHtml(msg || "Nothing here") +
+            "</span></div>";
+    }
+    function showError(el, msg) {
+        if (!el) return;
+        el.innerHTML = "<div class='thr-error-state' role='alert'><span class='thr-err-ic'>\u26A0</span> " +
+            escapeHtml(msg || "Something went wrong") + "</div>";
+    }
+    window.TeamHR.showLoading = showLoading;
+    window.TeamHR.hideLoading = hideLoading;
+    window.TeamHR.showEmpty = showEmpty;
+    window.TeamHR.showError = showError;
+
     /* ── Keyboard shortcuts ───────────────────────────────── */
     function initShortcuts() {
         document.addEventListener("keydown", function (e) {
             var tag = (e.target && e.target.tagName) || "";
             var inField = /INPUT|TEXTAREA|SELECT/.test(tag) ||
                 (e.target && e.target.isContentEditable);
+            var modalOpen = document.querySelector(".overlay.show, .modal-overlay.open");
+
+            // Esc closes any open modal/drawer (even when in field for Esc)
+            if (e.key === "Escape" && modalOpen) {
+                closeAllModals();
+                return;
+            }
+            // When modal is open, block all other shortcuts
+            if (modalOpen) return;
             if (inField) return;
 
             // "/" focuses global search
@@ -172,14 +276,14 @@
                 if (box) box.focus();
                 return;
             }
-            // Esc closes modals/drawers
-            if (e.key === "Escape") {
-                document.querySelectorAll(".modal-overlay.open, .drawer.open").forEach(function (m) {
-                    m.classList.remove("open");
-                    document.body.classList.remove("modal-open");
-                });
+            // Ctrl+K focuses global search
+            if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K") && !e.altKey) {
+                e.preventDefault();
+                var box2 = document.getElementById("globalSearchInput");
+                if (box2) box2.focus();
+                return;
             }
-            // Alt+N / Alt+P candidate nav (optional hook)
+            // Alt+N / Alt+P candidate nav
             if (e.altKey) {
                 if (e.key === "n" || e.key === "N") {
                     var n = document.querySelector("[data-prev-next='next']");
@@ -187,6 +291,14 @@
                 } else if (e.key === "p" || e.key === "P") {
                     var p = document.querySelector("[data-prev-next='prev']");
                     if (p) { e.preventDefault(); window.location.href = p.getAttribute("href"); }
+                } else if (e.key === "e" || e.key === "E") {
+                    // Alt+E edit candidate (candidate detail page)
+                    var edit = document.querySelector("[data-action='edit']");
+                    if (edit) { e.preventDefault(); edit.click(); }
+                } else if (e.key === "b" || e.key === "B") {
+                    // Alt+B batch review
+                    e.preventDefault();
+                    window.location.href = "/batch-review";
                 }
             }
         });

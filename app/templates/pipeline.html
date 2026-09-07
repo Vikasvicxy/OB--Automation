@@ -41,12 +41,29 @@
             </div>
         </header>
 
+        {# ── Saved views ────────────────────────────────── #}
+        <div class="saved-views" id="savedViews" role="navigation" aria-label="Saved filter views">
+            <span class="saved-views-label">Views:</span>
+            <button class="saved-view-btn active" data-view-id="all" onclick="loadPipelineView(null)">All</button>
+            {% for v in saved_views %}
+            <button class="saved-view-btn{% if v.is_default %} is-default{% endif %}"
+                    data-view-id="{{ v.view_id }}"
+                    data-view-name="{{ v.view_name | e }}"
+                    onclick="loadPipelineView({{ v.view_id }})">
+                {{ v.view_name }}
+            </button>
+            {% endfor %}
+            <span class="saved-views-actions">
+                <button class="btn btn-sm btn-outline" onclick="openSavePipelineViewModal()" title="Save current filters">+ Save View</button>
+            </span>
+        </div>
+
         <p class="pipeline-summary">
             Showing {{ filtered_count }} of {{ total }} candidates.
             {% if not column_order %}<span class="empty-note">No candidates match the current filters.</span>{% endif %}
         </p>
 
-        <form method="get" action="/pipeline" class="pipeline-toolbar">
+        <form method="get" action="/pipeline" class="pipeline-toolbar" id="filterForm">
             <input type="search" name="search" value="{{ filters.search }}" placeholder="Search by name or mobile" aria-label="Search candidates by name or mobile">
             <label class="filter-check"><input type="checkbox" name="today" value="1" {% if filters.today %}checked{% endif %}> Today</label>
             <select name="entity" aria-label="Entity"><option value="">Entity: All</option>{% for e in entities %}<option value="{{ e }}" {% if filters.entity == e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select>
@@ -89,6 +106,86 @@
         </div>
     </main>
 
+    {# ── Save view modal ──────────────────────────────── #}
+    <div class="overlay" id="savePipelineViewOverlay">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Save pipeline filter view">
+            <div class="modal-header">
+                <h3>Save Pipeline View</h3>
+                <button class="modal-close" onclick="TeamHR.closeModal('savePipelineViewOverlay')" aria-label="Close">&times;</button>
+            </div>
+            <div style="padding:16px">
+                <label style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:6px">View Name</label>
+                <input type="text" id="pipelineViewNameInput" placeholder="e.g. Today Ready" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.85rem" maxlength="40">
+                <p style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px">Saves current filter selections. Does not save Aadhaar or address.</p>
+                <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+                    <button class="btn btn-sm btn-outline" onclick="TeamHR.closeModal('savePipelineViewOverlay')">Cancel</button>
+                    <button class="btn btn-sm btn-primary" onclick="savePipelineView()">Save View</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% include 'partials/_toast.html' %}
+    <script>
+    (function () {
+        /* ── Saved views ────────────────────────────────── */
+        window.loadPipelineView = function (viewId) {
+            var btns = document.querySelectorAll("#savedViews .saved-view-btn");
+            for (var i = 0; i < btns.length; i++) btns[i].classList.remove("active");
+            if (viewId === null) {
+                document.querySelector('[data-view-id="all"]').classList.add("active");
+                window.location.href = "/pipeline";
+                return;
+            }
+            document.querySelector('[data-view-id="' + viewId + '"]').classList.add("active");
+            fetch("/api/saved-views/" + viewId)
+            .then(function (r) { return r.json(); })
+            .then(function (v) {
+                if (!v || !v.view_def) { window.showToast("View not found", "error"); return; }
+                var def = typeof v.view_def === "string" ? JSON.parse(v.view_def) : v.view_def;
+                var form = document.getElementById("filterForm");
+                // Apply saved filter values to form fields, then submit
+                var fields = ["search", "today", "entity", "operation", "cost_code", "role", "facility", "batch_id", "status"];
+                for (var i = 0; i < fields.length; i++) {
+                    var key = fields[i];
+                    var el = form.querySelector('[name="' + key + '"]');
+                    if (!el) continue;
+                    if (key === "today") { el.checked = !!def[key]; }
+                    else { el.value = def[key] || ""; }
+                }
+                form.submit();
+            })
+            .catch(function () { window.showToast("Failed to load view", "error"); });
+        };
+
+        window.openSavePipelineViewModal = function () {
+            document.getElementById("pipelineViewNameInput").value = "";
+            document.getElementById("savePipelineViewOverlay").classList.add("show");
+        };
+
+        window.savePipelineView = function () {
+            var name = document.getElementById("pipelineViewNameInput").value.trim();
+            if (!name) { window.showToast("Enter a view name", "warning"); return; }
+            var form = document.getElementById("filterForm");
+            var viewDef = {};
+            var fields = ["search", "today", "entity", "operation", "cost_code", "role", "facility", "batch_id", "status"];
+            for (var i = 0; i < fields.length; i++) {
+                var key = fields[i];
+                var el = form.querySelector('[name="' + key + '"]');
+                if (!el) continue;
+                if (key === "today") { if (el.checked) viewDef[key] = "1"; }
+                else if (key === "status") { viewDef[key] = el.value || "all"; }
+                else { if (el.value) viewDef[key] = el.value; }
+            }
+            fetch("/api/saved-views", { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ view_name: name, page: "pipeline", view_def: viewDef }) })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (d.ok) { window.showToast("View saved", "success"); TeamHR.closeModal("savePipelineViewOverlay"); setTimeout(function () { location.reload(); }, 500); }
+                else window.showToast(d.error || "Failed", "error");
+            })
+            .catch(function () { window.showToast("Network error", "error"); });
+        };
+    })();
+    </script>
 </body>
 </html>

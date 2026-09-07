@@ -119,29 +119,13 @@ def _rows_to_records(rows: list) -> list[dict]:
     return out
 
 
-# ── Loaders ─────────────────────────────────────────────────────────────────
+# ── Extractors (pure parse; used by loaders AND by the dry-run import preview) ──
 
 
-def load_designations(path: Optional[Path] = None) -> dict:
-    """Load the official designation list from the Designation Master Excel.
-
-    Returns a summary {status, row_count, ...}.
-    """
-    global _COST_CODE_DESIGNATIONS
-    fpath = path or DESIGNATION_FILE
-    if not fpath.exists():
-        database.record_master_load("designation", fpath.name, 0, "not_configured")
-        _COST_CODE_DESIGNATIONS = {}
-        return {"kind": "designation", "row_count": 0, "status": "Not Configured",
-                "filename": fpath.name, "ok": False}
-
-    rows = _read_excel_rows(fpath)
-    if rows is None:
-        database.record_master_load("designation", fpath.name, 0, "error")
-        return {"kind": "designation", "row_count": 0, "status": "Error",
-                "filename": fpath.name, "ok": False}
-
-    records = _rows_to_records(rows)
+def _extract_designations(records: list) -> dict[str, list[str]]:
+    """Parse designation rows into {cost_code: [official names]} WITHOUT touching
+    module state or the database. Shared by :func:`load_designations` and the
+    safe dry-run :func:`preview_masters`."""
     by_cc: dict[str, list[str]] = {cc: [] for cc in COST_CODES}
     for r in records:
         desig = _find_col(r, ["DESIGNATION", "DESIGNATION NAME", "TITLE", "ROLE"])
@@ -157,35 +141,13 @@ def load_designations(path: Optional[Path] = None) -> dict:
             for cc, info in COST_CODES.items():
                 if desig.startswith(info["prefix"] + " - ") and desig not in by_cc[cc]:
                     by_cc[cc].append(desig)
-
-    _COST_CODE_DESIGNATIONS = {cc: list(des) for cc, des in by_cc.items()}
-    total = sum(len(v) for v in _COST_CODE_DESIGNATIONS.values())
-    database.record_master_load("designation", fpath.name, total, "ok")
-    return {"kind": "designation", "row_count": total, "status": "Configured",
-            "filename": fpath.name, "ok": True}
+    return by_cc
 
 
-def load_facilities(path: Optional[Path] = None) -> dict:
-    """Load the Facility / Location Master from Excel.
-
-    Expected columns: FACILITY | LOCATION | FACILITY NAME.
-    FACILITY NAME is the main searchable hub value; LOCATION is the location code.
-    """
-    global _HUB_MASTER, _LOCATION_BY_FACILITY, _FACILITY_ROWS
-    fpath = path or FACILITY_FILE
-    if not fpath.exists():
-        database.record_master_load("facility", fpath.name, 0, "not_configured")
-        _HUB_MASTER, _LOCATION_BY_FACILITY, _FACILITY_ROWS = [], {}, []
-        return {"kind": "facility", "row_count": 0, "status": "Not Configured",
-                "filename": fpath.name, "ok": False}
-
-    rows = _read_excel_rows(fpath)
-    if rows is None:
-        database.record_master_load("facility", fpath.name, 0, "error")
-        return {"kind": "facility", "row_count": 0, "status": "Error",
-                "filename": fpath.name, "ok": False}
-
-    records = _rows_to_records(rows)
+def _extract_facilities(records: list) -> list[dict]:
+    """Parse facility rows into effective-style facility dicts WITHOUT touching
+    module state or the database. Shared by :func:`load_facilities` and the safe
+    dry-run :func:`preview_masters`."""
     facilities = []
     seen = set()
     for r in records:
@@ -218,7 +180,62 @@ def load_facilities(path: Optional[Path] = None) -> dict:
             "active": 1,
             "source": "Excel Import",
         })
+    return facilities
 
+
+# ── Loaders ─────────────────────────────────────────────────────────────────
+
+
+def load_designations(path: Optional[Path] = None) -> dict:
+    """Load the official designation list from the Designation Master Excel.
+
+    Returns a summary {status, row_count, ...}.
+    """
+    global _COST_CODE_DESIGNATIONS
+    fpath = path or DESIGNATION_FILE
+    if not fpath.exists():
+        database.record_master_load("designation", fpath.name, 0, "not_configured")
+        _COST_CODE_DESIGNATIONS = {}
+        return {"kind": "designation", "row_count": 0, "status": "Not Configured",
+                "filename": fpath.name, "ok": False}
+
+    rows = _read_excel_rows(fpath)
+    if rows is None:
+        database.record_master_load("designation", fpath.name, 0, "error")
+        return {"kind": "designation", "row_count": 0, "status": "Error",
+                "filename": fpath.name, "ok": False}
+
+    records = _rows_to_records(rows)
+    by_cc = _extract_designations(records)
+    _COST_CODE_DESIGNATIONS = {cc: list(des) for cc, des in by_cc.items()}
+    total = sum(len(v) for v in _COST_CODE_DESIGNATIONS.values())
+    database.record_master_load("designation", fpath.name, total, "ok")
+    return {"kind": "designation", "row_count": total, "status": "Configured",
+            "filename": fpath.name, "ok": True}
+
+
+def load_facilities(path: Optional[Path] = None) -> dict:
+    """Load the Facility / Location Master from Excel.
+
+    Expected columns: FACILITY | LOCATION | FACILITY NAME.
+    FACILITY NAME is the main searchable hub value; LOCATION is the location code.
+    """
+    global _HUB_MASTER, _LOCATION_BY_FACILITY, _FACILITY_ROWS
+    fpath = path or FACILITY_FILE
+    if not fpath.exists():
+        database.record_master_load("facility", fpath.name, 0, "not_configured")
+        _HUB_MASTER, _LOCATION_BY_FACILITY, _FACILITY_ROWS = [], {}, []
+        return {"kind": "facility", "row_count": 0, "status": "Not Configured",
+                "filename": fpath.name, "ok": False}
+
+    rows = _read_excel_rows(fpath)
+    if rows is None:
+        database.record_master_load("facility", fpath.name, 0, "error")
+        return {"kind": "facility", "row_count": 0, "status": "Error",
+                "filename": fpath.name, "ok": False}
+
+    records = _rows_to_records(rows)
+    facilities = _extract_facilities(records)
     _FACILITY_ROWS = facilities
     _HUB_MASTER = [f["facility_name"] for f in facilities]
     _LOCATION_BY_FACILITY = {f["facility_name"]: f["location"] for f in facilities}
@@ -232,6 +249,111 @@ def load_masters() -> dict:
     d = load_designations()
     f = load_facilities()
     return {"designation": d, "facility": f}
+
+
+# ── Dry-run import preview (Phase 6) ─────────────────────────────────────────
+# Reads the EXCEL files and diffs against the CURRENT effective master WITHOUT
+# mutating module state or the DB (no record_master_load, no global assignment).
+# Used by the Admin Master "Master Import" tab before Apply Import.
+
+
+def preview_masters() -> dict:
+    """Return a safe, dry-run classification of what an import WOULD do.
+
+    Counts: new / changed / unchanged / duplicate / invalid / override_conflict
+    for facilities and designations. Never modifies state.
+    """
+    result = {
+        "dry_run": True,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "facilities": {"new": 0, "changed": 0, "unchanged": 0, "duplicate": 0,
+                       "invalid": 0, "override_conflict": 0, "total": 0,
+                       "examples": []},
+        "designations": {"new": 0, "changed": 0, "unchanged": 0, "duplicate": 0,
+                         "invalid": 0, "override_conflict": 0, "total": 0,
+                         "examples": []},
+    }
+
+    # ── Facilities ──
+    rows = _read_excel_rows(FACILITY_FILE)
+    if rows:
+        records = _rows_to_records(rows)
+        parsed = _extract_facilities(records)
+    else:
+        parsed = []
+    effective = {f["facility_name"]: f for f in _effective_facilities()}
+    try:
+        admin_all = _admin().list_admin_facilities()
+        admin_by_name = {a["facility_name"]: a for a in admin_all}
+    except Exception:  # noqa: BLE001
+        admin_by_name = {}
+
+    seen_names: set[str] = set()
+    fac = result["facilities"]
+    fac["total"] = len(parsed)
+    for f in parsed:
+        name = f["facility_name"]
+        key = (name, f["cost_code"], f["entity"], f["operation"])
+        if name in seen_names:
+            fac["duplicate"] += 1
+            fac["examples"].append({"name": name, "kind": "duplicate"})
+            continue
+        seen_names.add(name)
+        admin = admin_by_name.get(name)
+        if admin and admin.get("cost_code") != f["cost_code"]:
+            fac["override_conflict"] += 1
+            fac["examples"].append({"name": name, "kind": "override_conflict",
+                                    "excel": f["cost_code"],
+                                    "admin": admin.get("cost_code", "")})
+            continue
+        cur = effective.get(name)
+        if cur is None:
+            fac["new"] += 1
+            fac["examples"].append({"name": name, "kind": "new"})
+            continue
+        if (cur.get("cost_code") != f["cost_code"]
+                or cur.get("entity") != f["entity"]
+                or cur.get("operation") != f["operation"]
+                or cur.get("location") != f["location"]):
+            fac["changed"] += 1
+            fac["examples"].append({"name": name, "kind": "changed"})
+            continue
+        fac["unchanged"] += 1
+
+    # ── Designations ──
+    drows = _read_excel_rows(DESIGNATION_FILE)
+    if drows:
+        drecords = _rows_to_records(drows)
+        parsed_d = _extract_designations(drecords)
+    else:
+        parsed_d = {}
+    existing_roles = set()
+    for v in _COST_CODE_DESIGNATIONS.values():
+        existing_roles.update(v)
+    try:
+        for r in _admin().list_admin_roles():
+            if r.get("active"):
+                existing_roles.add(r["official_name"])
+    except Exception:  # noqa: BLE001
+        pass
+
+    des = result["designations"]
+    des["total"] = sum(len(v) for v in parsed_d.values())
+    seen_d: set[str] = set()
+    for cc, names in parsed_d.items():
+        for dname in names:
+            if dname in seen_d:
+                des["duplicate"] += 1
+                des["examples"].append({"name": dname, "kind": "duplicate"})
+                continue
+            seen_d.add(dname)
+            if dname in existing_roles:
+                des["unchanged"] += 1
+            else:
+                des["new"] += 1
+                des["examples"].append({"name": dname, "kind": "new",
+                                        "cost_code": cc})
+    return result
 
 
 _IS_INITIALIZED = False

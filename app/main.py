@@ -340,7 +340,9 @@ async def candidates_page(request: Request, search: str = ""):
     all_candidates = database.search_candidates(search)
     return templates.TemplateResponse(
         "candidates.html",
-        {"request": request, "candidates": all_candidates, "search": search},
+        {"request": request, "candidates": all_candidates, "search": search,
+         "saved_views": database.list_saved_views("candidates"),
+         "batches": database.list_batches()},
     )
 
 
@@ -359,6 +361,97 @@ def _candidate_context(candidate: dict) -> dict:
     """Safe metadata used to render the detail page (full Aadhaar is rendered
     separately and only when the detail template is shown)."""
     return candidate
+
+
+# ── Phase 6: Review attention summary ────────────────────────────────────────
+# Real evidence only (stored candidate fields + resolver evidence snapshot).
+
+
+def _review_summary(candidate: dict) -> dict:
+    """Compact, evidence-backed review status for the Candidate Review workspace."""
+    reasons: list[str] = []
+    status = (candidate.get("status") or "").lower()
+    portal = (candidate.get("portal_status") or "").lower()
+    evidence = candidate.get("evidence_snapshot") or {}
+    try:
+        if isinstance(evidence, str):
+            evidence = json.loads(evidence)
+    except Exception:  # noqa: BLE001
+        evidence = {}
+
+    level = "ready"
+    if portal in ("failed",):
+        level = "portal_failed"
+    elif status in ("generated", "portal_pending", "portal_success"):
+        level = "ready"
+    elif status in ("needs_attention", "needs_review"):
+        level = "needs_review"
+
+    if not (candidate.get("designation") or "").strip():
+        reasons.append("Missing role")
+    if not (candidate.get("facility_name") or "").strip():
+        reasons.append("Ambiguous facility")
+    else:
+        cost_code = candidate.get("cost_code") or ""
+        if cost_code and candidate["facility_name"] not in rules.get_hubs_for_cost_code(cost_code):
+            reasons.append("Facility incompatible with cost code")
+
+    name_conflict = False
+    for field_name in ("name",):
+        info = evidence.get(field_name) if isinstance(evidence, dict) else None
+        if isinstance(info, dict) and (info.get("confidence") or "") in ("Conflict", "Low"):
+            name_conflict = True
+    facility_conflict = False
+    finfo = evidence.get("facility") if isinstance(evidence, dict) else None
+    if isinstance(finfo, dict) and (finfo.get("confidence") or "") in ("Conflict", "Low"):
+        facility_conflict = True
+
+    if name_conflict:
+        reasons.append("Low confidence name")
+    if facility_conflict:
+        reasons.append("Ambiguous facility")
+    if not (candidate.get("mobile") or "").strip():
+        reasons.append("Missing mobile")
+
+    dup = database.find_duplicate_mobile(candidate.get("mobile", ""),
+                                         exclude_id=candidate.get("candidate_id"))
+    if dup:
+        reasons.append("Duplicate mobile")
+
+    salary = candidate.get("salary")
+    try:
+        if salary and int(salary) <= 0:
+            reasons.append("Invalid salary")
+    except (TypeError, ValueError):
+        if salary not in (None, "", 0):
+            reasons.append("Invalid salary")
+
+    if level == "ready" and reasons:
+        level = "needs_review"
+    return {
+        "level": level,
+        "label": {
+            "ready": "Ready", "needs_review": "Needs Review",
+            "conflict": "Conflict", "portal_failed": "Portal Failed",
+        }[level if level in ("ready", "needs_review", "conflict", "portal_failed") else "needs_review"],
+        "reasons": reasons,
+    }
+
+
+def _quick_actions(candidate: dict) -> dict:
+    """Which quick actions are valid for the CURRENT status and backend.
+    Never offers portal submit / restore / delete."""
+    status = (candidate.get("status") or "").lower()
+    in_flow = status in ("generated", "portal_pending", "portal_success", "portal_failed")
+    batch_id = candidate.get("batch_id")
+    return {
+        "edit": True,
+        "approve": not in_flow,
+        "mark_review": not in_flow,
+        "add_to_batch": not (batch_id is not None and batch_id) or True,
+        "view_generated": bool(batch_id),
+        "prepare_live_upload": status in ("ready", "generated"),
+    }
 
 
 @app.get("/candidates/{candidate_id}", response_class=HTMLResponse)
@@ -388,6 +481,9 @@ async def candidate_detail_page(request: Request, candidate_id: int):
     except Exception:  # noqa: BLE001
         evidence = None
 
+    review = _review_summary(dict(candidate))
+    qa = _quick_actions(dict(candidate))
+
     return templates.TemplateResponse(
         "candidate_detail.html",
         {
@@ -399,6 +495,9 @@ async def candidate_detail_page(request: Request, candidate_id: int):
             "generated_files": generated_files,
             "portal": portal,
             "evidence": evidence,
+            "review_summary": review,
+            "quick_actions": qa,
+            "batches": database.list_batches(),
             "prev_id": neighbors["prev_id"],
             "next_id": neighbors["next_id"],
             "nav_active": "candidates",
@@ -650,6 +749,7 @@ async def pipeline_page(request: Request, search: str = "", today: bool = False,
                 "portal_success": "Portal Success", "portal_failed": "Portal Failed",
                 "other": "Other / Review",
             },
+            "saved_views": database.list_saved_views("pipeline"),
             "nav_active": "pipeline",
         },
     )
@@ -1161,6 +1261,232 @@ async def api_admin_history():
 async def api_admin_export(kind: str = "facilities"):
     rows = admin_master.export_facilities() if kind == "facilities" else admin_master.export_roles()
     return JSONResponse({"kind": kind, "rows": rows})
+
+
+# ── Phase 6: Master Import Preview (dry-run, no mutation) ────────────────────
+# The preview reads the Excel masters and diffs against the CURRENT effective
+# master. It never record_master_loads, never assigns globals, and never touches
+# source Excel files. Apply Import only re-runs the loader (same as Reload).
+
+
+@app.post("/api/admin/import-preview")
+async def api_admin_import_preview():
+    preview = master_data.preview_masters()
+    return JSONResponse(preview)
+
+
+@app.post("/api/admin/import-apply")
+async def api_admin_import_apply():
+    status = master_data.load_masters()
+    for kind in ("designation", "facility"):
+        info = status.get(kind, {})
+        database.record_master_load(
+            master_type=kind,
+            filename=info.get("filename", ""),
+            row_count=info.get("row_count", 0),
+            status="OK" if info.get("ok") else "ERROR",
+        )
+    rules.refresh_masters()
+    return JSONResponse({
+        "reloaded": True,
+        "status": master_data.get_master_status(),
+    })
+
+
+# ── Phase 6: Saved views / filters ───────────────────────────────────────────
+# Views store ONLY safe filter definitions; sensitive fields are rejected.
+
+_SAVED_VIEW_SAFE_KEYS = {"search", "status", "entity", "operation", "cost_code",
+                         "role", "facility", "batch_id", "today", "view_name"}
+
+
+def _sanitized_view_def(raw: dict) -> dict:
+    raw = raw or {}
+    return {k: raw[k] for k in raw if k in _SAVED_VIEW_SAFE_KEYS}
+
+
+@app.get("/api/saved-views")
+async def api_saved_views(page: str = "candidates"):
+    views = database.list_saved_views(page or "candidates")
+    return JSONResponse({"ok": True, "views": views})
+
+
+@app.post("/api/saved-views")
+async def api_create_saved_view(request: Request):
+    data = await request.json() or {}
+    name = (data.get("name") or "").strip()
+    page = (data.get("page") or "candidates").strip()
+    if not name:
+        return JSONResponse({"ok": False, "error": "View name is required."},
+                            status_code=422)
+    if page not in ("candidates", "pipeline"):
+        return JSONResponse({"ok": False, "error": "Unsupported page."},
+                            status_code=422)
+    view_id = database.create_saved_view(name, page, _sanitized_view_def(data.get("def") or {}))
+    return JSONResponse({"ok": True, "view_id": view_id})
+
+
+@app.put("/api/saved-views/{view_id}")
+async def api_update_saved_view(view_id: int, request: Request):
+    data = await request.json() or {}
+    name = (data.get("name") or "").strip()
+    view_def = _sanitized_view_def(data.get("def") or {})
+    ok = database.update_saved_view(view_id,
+                                    view_name=name or None,
+                                    view_def=view_def or None)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "View not found."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/saved-views/{view_id}")
+async def api_delete_saved_view(view_id: int):
+    ok = database.delete_saved_view(view_id)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "View not found."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/saved-views/{view_id}/default")
+async def api_set_default_saved_view(view_id: int, request: Request):
+    data = await request.json() or {}
+    page = (data.get("page") or "candidates").strip()
+    ok = database.set_default_saved_view(view_id, page)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "View not found."}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+# ── Phase 6: Safe bulk actions + export selected ─────────────────────────────
+# Allowed: Mark Needs Review · Add Ready to batch · Export safe fields.
+# Never: bulk approve, portal status changes, uploads, deletes, Aadhaar/address.
+
+_BULK_ACTIONS = {"mark_needs_review", "add_to_batch"}
+
+
+@app.post("/api/candidates/bulk-action")
+async def api_candidates_bulk_action(request: Request):
+    data = await request.json() or {}
+    action = (data.get("action") or "").strip().lower()
+    ids = [int(i) for i in (data.get("ids") or [])
+           if str(i).strip().lstrip("-").isdigit()]
+    if action not in _BULK_ACTIONS:
+        return JSONResponse(
+            {"ok": False, "error": f"Bulk action '{action}' is not supported."},
+            status_code=422)
+    if not ids:
+        return JSONResponse({"ok": False, "error": "No candidates selected."},
+                            status_code=422)
+    ids = ids[:500]
+    if action == "mark_needs_review":
+        updated, errors = database.bulk_mark_needs_review(ids)
+    else:  # add_to_batch
+        try:
+            batch_id = int(data.get("batch_id") or 0)
+        except (TypeError, ValueError):
+            batch_id = 0
+        if batch_id <= 0:
+            return JSONResponse({"ok": False, "error": "A valid batch is required."},
+                                status_code=422)
+        updated, errors = database.bulk_add_to_batch(ids, batch_id)
+    return JSONResponse({"ok": True, "action": action, "updated": updated,
+                         "errors": errors})
+
+
+@app.get("/api/candidates/export-selected")
+async def api_export_selected_candidates(ids: str = ""):
+    """Export selected candidates' SAFE fields as CSV (no Aadhaar/address)."""
+    ids_list = [int(i) for i in ids.split(",") if i.strip().lstrip("-").isdigit()]
+    rows = database.get_candidates_safe(ids_list)
+    fields = ["candidate_id", "name", "mobile", "entity", "operation", "cost_code",
+              "designation", "facility_name", "location_code", "salary",
+              "salary_display", "status", "batch_id", "portal_status"]
+    import csv
+    import io
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow(r)
+    from fastapi.responses import Response
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=selected_candidates.csv"},
+    )
+
+
+# ── Phase 6: Candidate review quick actions ──────────────────────────────────
+# Approve reuses the SAME backend validation the form does (never bypasses it).
+# Mark Review / Add to Batch only flip safe status/batch fields.
+
+
+@app.post("/api/candidates/{candidate_id}/approve")
+async def api_approve_candidate(candidate_id: int):
+    candidate = database.get_candidate(candidate_id)
+    if candidate is None:
+        return JSONResponse({"ok": False, "error": "Candidate not found."},
+                            status_code=404)
+    status = (candidate.get("status") or "").lower()
+    if status in ("generated", "portal_pending", "portal_success", "portal_failed"):
+        return JSONResponse(
+            {"ok": False,
+             "error": "Cannot approve a candidate already in generation/portal flow."},
+            status_code=422)
+    payload = {
+        "name": candidate.get("name", ""),
+        "mobile": candidate.get("mobile", ""),
+        "cost_code": candidate.get("cost_code", ""),
+        "role": candidate.get("designation", ""),
+        "facility": candidate.get("facility_name", ""),
+        "facility_type": candidate.get("facility_type", ""),
+    }
+    errors = rules.validate_candidate(payload)
+    if errors:
+        return JSONResponse({"ok": False, "errors": errors}, status_code=422)
+    database.update_candidate(candidate_id, {"status": "ready"})
+    database.record_candidate_event(candidate_id, "Approved",
+                                    "Candidate approved via review workspace.")
+    return JSONResponse({"ok": True, "status": "ready"})
+
+
+@app.post("/api/candidates/{candidate_id}/mark-review")
+async def api_mark_candidate_review(candidate_id: int):
+    candidate = database.get_candidate(candidate_id)
+    if candidate is None:
+        return JSONResponse({"ok": False, "error": "Candidate not found."},
+                            status_code=404)
+    status = (candidate.get("status") or "").lower()
+    if status in ("generated", "portal_pending", "portal_success", "portal_failed"):
+        return JSONResponse(
+            {"ok": False,
+             "error": "Cannot flag a candidate in generation/portal flow for review."},
+            status_code=422)
+    database.update_candidate(candidate_id, {"status": "needs_review"})
+    database.record_candidate_event(candidate_id, "Marked for Review",
+                                    "Candidate flagged for review from review workspace.")
+    return JSONResponse({"ok": True, "status": "needs_review"})
+
+
+@app.post("/api/candidates/{candidate_id}/batch")
+async def api_add_candidate_to_batch(candidate_id: int, request: Request):
+    data = await request.json() or {}
+    try:
+        batch_id = int(data.get("batch_id") or 0)
+    except (TypeError, ValueError):
+        batch_id = 0
+    if batch_id <= 0:
+        return JSONResponse({"ok": False, "error": "A valid batch is required."},
+                            status_code=422)
+    candidate = database.get_candidate(candidate_id)
+    if candidate is None:
+        return JSONResponse({"ok": False, "error": "Candidate not found."},
+                            status_code=404)
+    updated, errors = database.bulk_add_to_batch([candidate_id], batch_id)
+    if not updated:
+        return JSONResponse({"ok": False, "errors": errors},
+                            status_code=422)
+    return JSONResponse({"ok": True, "batch_id": batch_id})
 
 
 # ── Manual Validation Mode ───────────────────────────────────────────────────

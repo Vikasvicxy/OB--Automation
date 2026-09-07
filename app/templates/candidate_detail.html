@@ -7,31 +7,24 @@
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/ui.css">
     <style>
-        .cd-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px}
-        .cd-nav .cd-links{display:flex;gap:10px;flex-wrap:wrap}
         .cd-headcard{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
         .cd-id{font-size:0.85rem;color:var(--text-secondary)}
-        .cd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:14px}
         .cd-field{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px}
         .cd-field .cd-label{font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);margin-bottom:4px}
         .cd-field .cd-value{font-size:0.95rem;color:var(--text-primary);word-break:break-word}
-        .cd-section{margin-top:24px}
+        .cd-section{margin-top:0}
         .cd-section h3{font-size:1rem;margin-bottom:10px}
         .empty-note{font-size:0.85rem;color:var(--text-secondary);font-style:italic}
         .ev-row{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)}
         .ev-row:last-child{border-bottom:none}
-        .ev-type{min-width:150px;font-weight:600;font-size:0.85rem}
+        .ev-type{min-width:140px;font-weight:600;font-size:0.85rem}
         .ev-summary{flex:1;font-size:0.85rem}
         .ev-time{white-space:nowrap;font-size:0.75rem;color:var(--text-secondary)}
         .hist-change{font-size:0.85rem;margin:3px 0}
-        .hist-change b{font-weight:600}
         .hist-field{font-weight:600;color:var(--accent-blue);text-transform:capitalize}
-        .reason-list{margin:0;padding-left:18px}
-        .reason-list li{font-size:0.85rem;margin:3px 0}
-        .cd-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.75rem;font-weight:600}
-        .cd-badge ok{background:#e6f7ee;color:#1a7f42}
-        .cd-badge bad{background:#fdecec;color:#b3261e}
         .kbd{display:inline-block;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:0.72rem;background:var(--bg-card);color:var(--text-secondary);margin-right:4px}
+        .cd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+        .generated-table{margin-top:8px}
     </style>
 </head>
 <body>
@@ -54,14 +47,14 @@
                         &middot; <span class="status-badge status-{{ (candidate.status or 'draft') | lower | replace(' ', '-') }}">{{ candidate.status or 'Draft' }}</span>
                     </p>
                 </div>
-                <div class="cd-links">
-                    <a href="/manual-entry?edit={{ candidate.candidate_id }}" class="btn btn-sm btn-outline">Edit</a>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                    <a href="/manual-entry?edit={{ candidate.candidate_id }}" class="btn btn-sm btn-outline" data-action="edit">Edit</a>
                 </div>
             </div>
         </header>
 
-        <nav class="cd-nav" aria-label="Candidate navigation">
-            <div class="cd-links">
+        <nav style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px" aria-label="Candidate navigation">
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
                 {% if prev_id %}
                 <a href="/candidates/{{ prev_id }}" class="btn btn-sm btn-outline" data-prev-next="prev">&larr; Previous</a>
                 {% else %}
@@ -74,186 +67,344 @@
                 {% endif %}
             </div>
             <div class="cd-id">
-                <span class="kbd">Alt</span>+<span class="kbd">P</span> Previous
+                <span class="kbd">Alt</span>+<span class="kbd">P</span> Prev
                 <span class="kbd">Alt</span>+<span class="kbd">N</span> Next
+                <span class="kbd">Alt</span>+<span class="kbd">E</span> Edit
             </div>
         </nav>
 
-        <section class="settings-section">
-            <h3 class="settings-heading">Details</h3>
-            <div class="cd-grid">
-                <div class="cd-field"><div class="cd-label">Name</div><div class="cd-value">{{ candidate.name or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Mobile</div><div class="cd-value">{{ candidate.mobile or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">DOB</div><div class="cd-value">{{ candidate.dob or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Aadhaar</div><div class="cd-value">{{ candidate.aadhaar_number or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Address</div><div class="cd-value">{{ candidate.address or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Entity</div><div class="cd-value">{{ candidate.entity or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Operation</div><div class="cd-value">{{ candidate.operation or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Cost Code</div><div class="cd-value">{{ candidate.cost_code or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Designation / Role</div><div class="cd-value">{{ candidate.designation or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Facility</div><div class="cd-value">{{ candidate.facility_name or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Location</div><div class="cd-value">{{ candidate.location_code or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Salary</div><div class="cd-value">{{ candidate.salary_display or candidate.salary or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Migrant</div><div class="cd-value">{{ candidate.migrant or 'No' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Status</div><div class="cd-value">{{ candidate.status or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Batch</div><div class="cd-value">
-                    {% if candidate.batch_id %}
-                    <a href="/batches/{{ candidate.batch_id }}">BATCH-{{ "%04d" | format(candidate.batch_id) }}</a>
-                    {% else %}Not assigned to batch{% endif %}
-                </div></div>
-                <div class="cd-field"><div class="cd-label">Created</div><div class="cd-value">{{ candidate.created_date or '—' }} {{ candidate.created_time or '' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Updated</div><div class="cd-value">{{ candidate.updated_at or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Portal Status</div><div class="cd-value">{{ candidate.portal_status or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Portal Remarks</div><div class="cd-value">{{ candidate.portal_remarks or '—' }}</div></div>
-            </div>
-        </section>
-
-        <section class="cd-section settings-section">
-            <h3 class="settings-heading">Timeline / Audit</h3>
-            {% if events %}
-            {% for ev in events %}
-            <div class="ev-row">
-                <div class="ev-type">{{ ev.event_type }}</div>
-                <div class="ev-summary">{{ ev.summary or '' }}</div>
-                <div class="ev-time">{{ ev.created_at }}</div>
-            </div>
-            {% endfor %}
-            {% else %}
-            <p class="empty-note">No timeline events yet</p>
-            {% endif %}
-        </section>
-
-        <section class="cd-section settings-section">
-            <h3 class="settings-heading">Edit History</h3>
-            {% if edit_history %}
-            {% for h in edit_history %}
-            <div class="hist-change">
-                <span class="hist-field">{{ h.field_name }}</span>:
-                {% if h.field_name == 'aadhaar_number' or h.field_name == 'address' %}
-                <span>{{ h.new_value }}</span>
+        {# ── Review attention summary ────────────────────────────── #}
+        <div class="review-banner {{ review_summary.level }}" role="status" aria-label="Review status: {{ review_summary.label }}">
+            <div class="rb-level">{{ review_summary.label }}</div>
+            <div class="rb-reasons">
+                {% if review_summary.reasons %}
+                {% for r in review_summary.reasons %}
+                <div class="rb-reason">{{ r }}</div>
+                {% endfor %}
                 {% else %}
-                <span>{{ h.old_value or '—' }}</span> &rarr; <span>{{ h.new_value or '—' }}</span>
+                <div class="rb-reason" style="opacity:0.6">All checks passed</div>
                 {% endif %}
-                <span class="ev-time">({{ h.edited_at }})</span>
             </div>
-            {% endfor %}
-            {% else %}
-            <p class="empty-note">No edit history yet</p>
-            {% endif %}
-        </section>
+        </div>
 
-        <section class="cd-section settings-section">
-            <h3 class="settings-heading">Evidence / Why</h3>
-            {% set ev_fields = (evidence or {}).items() %}
-            {% if evidence and (ev_fields | list | length) %}
-                {% for field, info in ev_fields %}
-                <div class="ev-row">
-                    <div class="ev-type">{{ field | replace('_', ' ') | title }}</div>
-                    <div class="ev-summary">
-                        <span class="cd-badge 
-                            {%- if info.confidence == 'High' %} ok{% elif info.confidence == 'Conflict' %} bad{% endif -%}
-                        ">{{ info.confidence or '—' }}</span>
-                        <span>&nbsp;Selected: <b>{{ info.selected_value or '—' }}</b></span>
-                        {% if info.selected_reasons %}
-                        <ul class="reason-list">
-                            {% for r in info.selected_reasons %}<li>{{ r }}</li>{% endfor %}
-                        </ul>
+        {# ── Sticky quick action bar ─────────────────────────────── #}
+        <div class="sticky-action-bar" role="toolbar" aria-label="Candidate actions">
+            <span class="bar-label">Actions</span>
+            {% if quick_actions.edit %}
+            <a href="/manual-entry?edit={{ candidate.candidate_id }}" class="btn btn-sm btn-outline" data-action="edit">Edit</a>
+            {% endif %}
+            {% if quick_actions.approve %}
+            <button class="btn btn-sm btn-success" id="btnApprove">Approve</button>
+            {% endif %}
+            {% if quick_actions.mark_review %}
+            <button class="btn btn-sm btn-warning" id="btnMarkReview">Mark Needs Review</button>
+            {% endif %}
+            {% if quick_actions.view_generated %}
+            <a href="/batch-review?batch_id={{ candidate.batch_id }}" class="btn btn-sm btn-outline">View Batch</a>
+            {% endif %}
+            {% if quick_actions.prepare_live_upload %}
+            <a href="/live-upload" class="btn btn-sm btn-outline" aria-disabled="true" title="Live upload is locked">Live Upload (Locked)</a>
+            {% endif %}
+            <select id="batchSelect" class="btn btn-sm btn-outline" style="font-size:0.78rem" aria-label="Move to batch">
+                <option value="">Add to Batch&hellip;</option>
+                {% for b in batches %}<option value="{{ b.batch_id }}">BATCH-{{ "%04d" | format(b.batch_id) }} ({{ b.candidate_count or 0 }})</option>{% endfor %}
+            </select>
+        </div>
+
+        {# ── 3-column review workspace ────────────────────────────── #}
+        <div class="review-grid">
+
+            {# ── LEFT: Documents ────────────────────────────────── #}
+            <div class="review-col review-col-left">
+                <section class="settings-section">
+                    <h3 class="settings-heading">Documents</h3>
+                    <div class="doc-viewer" id="docViewer" role="region" aria-label="Document viewer">
+                        <div class="doc-tabs" id="docTabs" role="tablist">
+                            <button class="doc-tab active" data-type="all" role="tab" aria-selected="true">All</button>
+                            <button class="doc-tab" data-type="aadhaar" role="tab">Aadhaar</button>
+                            <button class="doc-tab" data-type="recruiter" role="tab">Recruiter</button>
+                            <button class="doc-tab" data-type="other" role="tab">Other</button>
+                        </div>
+                        <div class="doc-controls">
+                            <button class="btn btn-sm btn-outline" id="docPrev" title="Previous document">&larr;</button>
+                            <button class="btn btn-sm btn-outline" id="docNext" title="Next document">&rarr;</button>
+                            <span class="page-info" id="docCounter">0 / 0</span>
+                            <span style="margin-left:auto;display:flex;gap:4px">
+                                <button class="btn btn-sm btn-outline" id="docZoomOut" title="Zoom out">&minus;</button>
+                                <button class="btn btn-sm btn-outline" id="docZoomIn" title="Zoom in">+</button>
+                                <button class="btn btn-sm btn-outline" id="docRotate" title="Rotate">&#x21BB;</button>
+                                <button class="btn btn-sm btn-outline" id="docFitWidth" title="Fit width">Fit</button>
+                            </span>
+                        </div>
+                        <div class="doc-viewport" id="docViewport">
+                            <div class="doc-empty" id="docEmpty">No documents available for this candidate</div>
+                            <img id="docImage" style="display:none" alt="Document preview">
+                        </div>
+                        <div class="doc-nav">
+                            <span id="docType">Type: All</span>
+                        </div>
+                    </div>
+                    <p class="empty-note" style="margin-top:8px" id="docNote">Documents are shown from the candidate's uploaded files.</p>
+                </section>
+            </div>
+
+            {# ── CENTER: Candidate details ──────────────────────── #}
+            <div class="review-col review-col-center">
+                <section class="settings-section">
+                    <h3 class="settings-heading">Candidate Details</h3>
+                    <div class="cd-grid">
+                        <div class="cd-field"><div class="cd-label">Name</div><div class="cd-value">{{ candidate.name or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Mobile</div><div class="cd-value">{{ candidate.mobile or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">DOB</div><div class="cd-value">{{ candidate.dob or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Entity</div><div class="cd-value">{{ candidate.entity or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Operation</div><div class="cd-value">{{ candidate.operation or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Cost Code</div><div class="cd-value">{{ candidate.cost_code or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Designation / Role</div><div class="cd-value">{{ candidate.designation or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Facility</div><div class="cd-value">{{ candidate.facility_name or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Location</div><div class="cd-value">{{ candidate.location_code or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Salary</div><div class="cd-value">{{ candidate.salary_display or candidate.salary or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Migrant</div><div class="cd-value">{{ candidate.migrant or 'No' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Portal Status</div><div class="cd-value">{{ candidate.portal_status or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Portal Remarks</div><div class="cd-value">{{ candidate.portal_remarks or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Created</div><div class="cd-value">{{ candidate.created_date or '—' }} {{ candidate.created_time or '' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Updated</div><div class="cd-value">{{ candidate.updated_at or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Batch</div><div class="cd-value">
+                            {% if candidate.batch_id %}
+                            <a href="/batches/{{ candidate.batch_id }}">BATCH-{{ "%04d" | format(candidate.batch_id) }}</a>
+                            {% else %}Not assigned{% endif %}
+                        </div></div>
+                    </div>
+                </section>
+
+                <section class="cd-section settings-section">
+                    <h3 class="settings-heading">Generated Files</h3>
+                    {% if generated_files %}
+                    <table class="data-table generated-table">
+                        <thead><tr><th>Filename</th><th>Created</th><th>Portal Status</th><th>Action</th></tr></thead>
+                        <tbody>
+                            {% for f in generated_files %}
+                            <tr>
+                                <td>{{ f.filename or '—' }}</td>
+                                <td>{{ f.generated_at or '—' }}</td>
+                                <td>{{ f.portal_status or '—' }}</td>
+                                <td>
+                                    {% if f.portal_result_path %}
+                                    <a href="/api/generated-file/{{ f.file_id }}/result" class="btn btn-sm btn-outline">View Result</a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="empty-note">No generated files</p>
+                    {% endif %}
+                </section>
+            </div>
+
+            {# ── RIGHT: Status / Evidence / Timeline ────────────── #}
+            <div class="review-col review-col-right">
+                <section class="settings-section">
+                    <h3 class="settings-heading">Evidence / Why</h3>
+                    {% set ev_fields = (evidence or {}).items() %}
+                    {% if evidence and (ev_fields | list | length) %}
+                    <div class="ev-grid">
+                        {% for field, info in ev_fields %}
+                        <div class="ev-card">
+                            <div class="ev-field">{{ field | replace('_', ' ') | title }}</div>
+                            <div class="ev-selected">
+                                <span class="ev-badge
+                                    {%- if info.confidence == 'High' %} ev-high
+                                    {%- elif info.confidence == 'Conflict' %} ev-conflict
+                                    {%- elif info.confidence == 'Low' %} ev-low
+                                    {%- else %} ev-auto{%- endif -%}
+                                ">{{ info.confidence or '—' }}</span>
+                                <span style="margin-left:6px">{{ info.selected_value or '—' }}</span>
+                            </div>
+                            {% if info.source %}<div class="ev-meta">Source: <b>{{ info.source }}</b></div>{% endif %}
+                            {% if info.compatibility %}<div class="ev-meta">Compatibility: <b>{{ info.compatibility }}</b></div>{% endif %}
+                            {% if info.selected_reasons %}
+                            <ul class="ev-reasons">
+                                {% for r in info.selected_reasons %}<li>{{ r }}</li>{% endfor %}
+                            </ul>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="empty-note">No evidence available</p>
+                    {% endif %}
+                </section>
+
+                <section class="cd-section settings-section">
+                    <h3 class="settings-heading">Timeline / Audit</h3>
+                    {% if events %}
+                    {% for ev in events %}
+                    <div class="ev-row">
+                        <div class="ev-type">{{ ev.event_type }}</div>
+                        <div class="ev-summary">{{ ev.summary or '' }}</div>
+                        <div class="ev-time">{{ ev.created_at }}</div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="empty-note">No timeline events yet</p>
+                    {% endif %}
+                </section>
+
+                <section class="cd-section settings-section">
+                    <h3 class="settings-heading">Edit History</h3>
+                    {% if edit_history %}
+                    {% for h in edit_history %}
+                    <div class="hist-change">
+                        <span class="hist-field">{{ h.field_name }}</span>:
+                        {% if h.field_name in ('aadhaar_number','address') %}
+                        <span>[redacted]</span>
+                        {% else %}
+                        <span>{{ h.old_value or '—' }}</span> &rarr; <span>{{ h.new_value or '—' }}</span>
                         {% endif %}
+                        <span style="font-size:0.75rem;color:var(--text-secondary)">({{ h.edited_at }})</span>
                     </div>
-                </div>
-                {% endfor %}
-            {% else %}
-            <p class="empty-note">No evidence available</p>
-            {% endif %}
-        </section>
-
-        <section class="cd-section settings-section">
-            <h3 class="settings-heading">Documents</h3>
-            {% if documents %}
-            <table class="data-table">
-                <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Uploaded</th></tr></thead>
-                <tbody>
-                    {% for d in documents %}
-                    <tr>
-                        <td>{{ d.filename or '—' }}</td>
-                        <td>{{ d.document_type or 'Other' }}</td>
-                        <td>{{ d.extraction_status or '—' }}</td>
-                        <td>{{ d.uploaded_at or '—' }}</td>
-                    </tr>
                     {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <p class="empty-note">No documents available</p>
-            {% endif %}
-        </section>
+                    {% else %}
+                    <p class="empty-note">No edit history yet</p>
+                    {% endif %}
+                </section>
 
-        <section class="cd-section settings-section">
-            <h3 class="settings-heading">Generated Files</h3>
-            {% if generated_files %}
-            <table class="data-table">
-                <thead><tr><th>Filename</th><th>Batch</th><th>Created</th><th>Portal Status</th><th>Action</th></tr></thead>
-                <tbody>
-                    {% for f in generated_files %}
-                    <tr>
-                        <td>{{ f.filename or '—' }}</td>
-                        <td>{{ f.batch_id or '—' }}</td>
-                        <td>{{ f.generated_at or '—' }}</td>
-                        <td>{{ f.portal_status or '—' }}</td>
-                        <td>
-                            {% if f.portal_result_path %}
-                            <a href="/api/generated-file/{{ f.file_id }}/result" class="btn btn-sm btn-outline">View Result</a>
-                            {% else %}<span class="empty-note">No action</span>{% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <p class="empty-note">No generated files</p>
-            {% endif %}
-        </section>
-
-        <section class="cd-section settings-section">
-            <h3 class="settings-heading">Portal History</h3>
-            {% macro portal_live_row(l) %}
-            <div class="ev-row">
-                <div class="ev-type">Live Upload</div>
-                <div class="ev-summary">
-                    Status: <b>{{ l.portal_status or '—' }}</b> &middot; Flow: {{ l.flow_status or '—' }}
-                    {% if l.success_count is not none %}&middot; Success: {{ l.success_count }}{% endif %}
-                    {% if l.failed_count is not none %}&middot; Failed: {{ l.failed_count }}{% endif %}
-                    {% if l.creation_remarks %}&middot; Remarks: {{ l.creation_remarks }}{% endif %}
-                    {% if l.portal_reference %}&middot; Ref: {{ l.portal_reference }}{% endif %}
-                </div>
-                <div class="ev-time">Submitted: {{ l.submitted_at or '—' }} / Started: {{ l.started_at or '—' }}</div>
+                <section class="cd-section settings-section">
+                    <h3 class="settings-heading">Portal History</h3>
+                    {% if (portal.uploads and portal.uploads | length) or (portal.live and portal.live | length) %}
+                        {% if portal.uploads and portal.uploads | length %}
+                        {% for u in portal.uploads %}
+                        <div class="ev-row">
+                            <div class="ev-type">Upload</div>
+                            <div class="ev-summary">Status: <b>{{ u.portal_status or '—' }}</b>{% if u.portal_reference %} &middot; Ref: {{ u.portal_reference }}{% endif %}</div>
+                            <div class="ev-time">{{ u.completed_at or '—' }}</div>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
+                        {% if portal.live and portal.live | length %}
+                        {% for l in portal.live %}
+                        <div class="ev-row">
+                            <div class="ev-type">Live Upload</div>
+                            <div class="ev-summary">Status: <b>{{ l.portal_status or '—' }}</b>{% if l.portal_reference %} &middot; Ref: {{ l.portal_reference }}{% endif %}</div>
+                            <div class="ev-time">{{ l.submitted_at or '—' }}</div>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
+                    {% else %}
+                    <p class="empty-note">No portal activity</p>
+                    {% endif %}
+                </section>
             </div>
-            {% endmacro %}
-
-            {% if (portal.uploads and portal.uploads | length) or (portal.live and portal.live | length) %}
-                {% if portal.uploads and portal.uploads | length %}
-                <h4 style="font-size:0.9rem;margin:8px 0 4px">File Uploads</h4>
-                {% for u in portal.uploads %}
-                <div class="ev-row">
-                    <div class="ev-type">Upload</div>
-                    <div class="ev-summary">
-                        Status: <b>{{ u.portal_status or '—' }}</b>
-                        {% if u.portal_reference %}&middot; Ref: {{ u.portal_reference }}{% endif %}
-                    </div>
-                    <div class="ev-time">Completed: {{ u.completed_at or '—' }}</div>
-                </div>
-                {% endfor %}
-                {% endif %}
-                {% if portal.live and portal.live | length %}
-                <h4 style="font-size:0.9rem;margin:8px 0 4px">Live Single-Candidate</h4>
-                {% for l in portal.live %}{{ portal_live_row(l) }}{% endfor %}
-                {% endif %}
-            {% else %}
-            <p class="empty-note">No portal activity</p>
-            {% endif %}
-        </section>
+        </div>
     </main>
 
+    {# ── Batch assignment modal ──────────────────────────────── #}
+    <div class="overlay" id="batchOverlay">
+        <div class="modal" role="dialog" aria-modal="true" aria-label="Add candidate to batch">
+            <div class="modal-header">
+                <h3>Add to Batch</h3>
+                <button class="modal-close" onclick="closeModal('batchOverlay')" aria-label="Close">&times;</button>
+            </div>
+            <div id="batchContent"></div>
+        </div>
+    </div>
+
     {% include 'partials/_toast.html' %}
+    <script>
+    (function () {
+        var CID = {{ candidate.candidate_id }};
+        var currentStatus = {{ candidate.status | tojson }};
+
+        /* ── Quick actions ─────────────────────────────────── */
+        var btnApprove = document.getElementById("btnApprove");
+        var btnMarkReview = document.getElementById("btnMarkReview");
+        var batchSelect = document.getElementById("batchSelect");
+
+        if (btnApprove) btnApprove.addEventListener("click", function () {
+            if (!confirm("Approve candidate #" + CID + "?")) return;
+            fetch("/api/candidates/" + CID + "/approve", {method:"POST"})
+            .then(function(r){return r.json()}).then(function(d){
+                if(d.ok){window.showToast("Candidate approved","success");setTimeout(function(){location.reload()},800)}
+                else window.showToast(d.errors ? JSON.stringify(d.errors) : d.error || "Approval failed","error");
+            }).catch(function(){window.showToast("Network error","error")});
+        });
+        if (btnMarkReview) btnMarkReview.addEventListener("click", function () {
+            if (!confirm("Flag candidate #" + CID + " for review?")) return;
+            fetch("/api/candidates/" + CID + "/mark-review", {method:"POST"})
+            .then(function(r){return r.json()}).then(function(d){
+                if(d.ok){window.showToast("Flagged for review","success");setTimeout(function(){location.reload()},800)}
+                else window.showToast(d.error || "Failed","error");
+            }).catch(function(){window.showToast("Network error","error")});
+        });
+        if (batchSelect) batchSelect.addEventListener("change", function () {
+            var bid = this.value;
+            if (!bid) return;
+            if (!confirm("Move candidate #" + CID + " to batch " + bid + "?")) {this.value="";return}
+            fetch("/api/candidates/" + CID + "/batch", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({batch_id:parseInt(bid)})})
+            .then(function(r){return r.json()}).then(function(d){
+                if(d.ok){window.showToast("Added to batch "+d.batch_id,"success");setTimeout(function(){location.reload()},800)}
+                else window.showToast(d.errors||d.error||"Failed","error");
+            }).catch(function(){window.showToast("Network error","error")});
+            this.value="";
+        });
+
+        /* ── Document viewer ───────────────────────────────── */
+        var docs = [
+            {% for d in documents %}
+            {"filename":"{{ d.filename | e }}","type":"{{ (d.document_type or 'other') | lower }}","id":"{{ d.document_id }}"},
+            {% endfor %}
+        ];
+        var srcFiles = {{ (candidate.source_files or []) | tojson }};
+        var allDocs = docs.length ? docs : (srcFiles || []).map(function(f){return{filename:f,type:"other",id:0}});
+        var filteredDocs = allDocs.slice();
+        var docIdx = 0;
+        var zoomLevel = 1;
+        var rotation = 0;
+
+        function renderDocTabs(){
+            var types = {"all":"All","aadhaar":"Aadhaar","recruiter":"Recruiter","other":"Other"};
+            document.querySelectorAll(".doc-tab").forEach(function(t){
+                var ty = t.getAttribute("data-type");
+                t.addEventListener("click",function(){
+                    document.querySelectorAll(".doc-tab").forEach(function(b){b.classList.remove("active");b.setAttribute("aria-selected","false")});
+                    t.classList.add("active");t.setAttribute("aria-selected","true");
+                    filteredDocs = ty==="all" ? allDocs.slice() : allDocs.filter(function(d){return d.type===ty});
+                    docIdx = 0;
+                    renderDoc();
+                });
+            });
+        }
+        function renderDoc(){
+            var img = document.getElementById("docImage");
+            var empty = document.getElementById("docEmpty");
+            var counter = document.getElementById("docCounter");
+            var typeLabel = document.getElementById("docType");
+            counter.textContent = filteredDocs.length ? (docIdx+1)+" / "+filteredDocs.length : "0 / 0";
+            if(!filteredDocs.length){img.style.display="none";empty.style.display="";return}
+            empty.style.display="none";
+            img.style.display="";
+            var d = filteredDocs[docIdx];
+            img.alt = "Document: "+d.filename;
+            typeLabel.textContent = "Type: "+d.type;
+            // Show filename only (images not stored on disk in this version)
+            img.src = "";
+            img.style.display="none";
+            empty.style.display="";
+            empty.innerHTML = "<b>"+d.filename+"</b><br><small class='empty-note'>"+d.type+"</small>";
+            zoomLevel=1;rotation=0;
+        }
+        document.getElementById("docPrev").addEventListener("click",function(){if(filteredDocs.length){docIdx=(docIdx-1+filteredDocs.length)%filteredDocs.length;renderDoc()}});
+        document.getElementById("docNext").addEventListener("click",function(){if(filteredDocs.length){docIdx=(docIdx+1)%filteredDocs.length;renderDoc()}});
+        document.getElementById("docZoomIn").addEventListener("click",function(){zoomLevel=Math.min(zoomLevel+0.2,3);applyZoom()});
+        document.getElementById("docZoomOut").addEventListener("click",function(){zoomLevel=Math.max(zoomLevel-0.2,0.4);applyZoom()});
+        document.getElementById("docRotate").addEventListener("click",function(){rotation=(rotation+90)%360;applyZoom()});
+        document.getElementById("docFitWidth").addEventListener("click",function(){zoomLevel=1;rotation=0;applyZoom()});
+        function applyZoom(){var img=document.getElementById("docImage");img.style.transform="scale("+zoomLevel+") rotate("+rotation+"deg)"}
+
+        renderDocTabs();
+        renderDoc();
+    })();
+    </script>
 </body>
 </html>
