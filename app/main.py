@@ -2200,6 +2200,136 @@ async def api_evidence_score(request: Request):
     })
 
 
+# ── Phase 7: Manual Acceptance Test (UAT) ────────────────────────────────────
+
+
+@app.get("/uat", response_class=HTMLResponse)
+async def uat_page(request: Request):
+    from app.uat_catalog import UAT_GROUPS
+    run_id = request.query_params.get("run")
+    current_run = None
+    results = []
+    if run_id:
+        try:
+            run_id = int(run_id)
+            current_run = database.uat_get_run(run_id)
+            results = database.uat_get_results(run_id)
+        except (ValueError, TypeError):
+            run_id = None
+    runs = database.uat_list_runs(50)
+    # Build a lookup map for JS: {group_key: {test_id: test_name}}
+    groups_map = {}
+    for g in UAT_GROUPS:
+        groups_map[g["key"]] = {tid: tname for tid, tname in g["tests"]}
+    return templates.TemplateResponse("uat.html", {
+        "request": request,
+        "groups": UAT_GROUPS,
+        "groups_map": groups_map,
+        "current_run": current_run,
+        "results": results,
+        "runs": runs,
+    })
+
+
+@app.post("/api/uat/run/start")
+async def uat_start_run(request: Request):
+    data = await request.json()
+    notes = data.get("notes", "")
+    run_id = database.uat_start_run(notes=notes)
+    return JSONResponse({"ok": True, "run_id": run_id})
+
+
+@app.get("/api/uat/runs")
+async def uat_list_runs_api():
+    runs = database.uat_list_runs(50)
+    return JSONResponse({"ok": True, "runs": runs})
+
+
+@app.get("/api/uat/run/{run_id}")
+async def uat_get_run_api(run_id: int):
+    run = database.uat_get_run(run_id)
+    if not run:
+        return JSONResponse({"error": "Run not found"}, status_code=404)
+    results = database.uat_get_results(run_id)
+    summary = database.uat_get_summary(run_id)
+    return JSONResponse({"ok": True, "run": run, "results": results, "summary": summary})
+
+
+@app.post("/api/uat/run/{run_id}/finish")
+async def uat_finish_run_api(run_id: int):
+    run = database.uat_get_run(run_id)
+    if not run:
+        return JSONResponse({"error": "Run not found"}, status_code=404)
+    database.uat_finish_run(run_id)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/uat/result")
+async def uat_result_api(request: Request):
+    data = await request.json()
+    run_id = data.get("run_id")
+    test_id = data.get("test_id", "").strip()
+    status = data.get("status", "").strip().upper()
+    notes = data.get("notes", "")
+    if not run_id or not test_id:
+        return JSONResponse({"error": "run_id and test_id required"}, status_code=400)
+    if status not in ("PASS", "FAIL", "NOT_TESTED", "BLOCKED"):
+        return JSONResponse({"error": f"Invalid status: {status}"}, status_code=400)
+    if status in ("FAIL", "BLOCKED") and not notes.strip():
+        return JSONResponse({"error": f"Notes required for {status}"}, status_code=400)
+    try:
+        result_id = database.uat_upsert_result(run_id, test_id, status, notes)
+        run = database.uat_get_run(run_id)
+        return JSONResponse({"ok": True, "result_id": result_id, "status": status,
+                             "tested_at": run["started_at"] if run else ""})
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+
+@app.get("/api/uat/export")
+async def uat_export_api(request: Request):
+    run_id = request.query_params.get("run_id")
+    fmt = request.query_params.get("format", "csv")
+    if not run_id:
+        return JSONResponse({"error": "run_id required"}, status_code=400)
+    try:
+        run_id = int(run_id)
+    except (ValueError, TypeError):
+        return JSONResponse({"error": "Invalid run_id"}, status_code=400)
+    results = database.uat_export_results(run_id)
+    if fmt == "csv":
+        import csv
+        import io
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=["run_id", "group", "test_id", "status", "notes", "tested_at"])
+        writer.writeheader()
+        for r in results:
+            writer.writerow(r)
+        from starlette.responses import Response
+        return Response(content=buf.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=uat_run_{run_id}.csv"})
+    elif fmt == "xlsx":
+        try:
+            import openpyxl
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = f"UAT Run {run_id}"
+            ws.append(["Run ID", "Group", "Test ID", "Status", "Notes", "Tested At"])
+            for r in results:
+                ws.append([r["run_id"], r["group"], r["test_id"], r["status"], r["notes"], r["tested_at"]])
+            import io
+            buf = io.BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            from starlette.responses import Response
+            return Response(content=buf.getvalue(),
+                            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            headers={"Content-Disposition": f"attachment; filename=uat_run_{run_id}.xlsx"})
+        except ImportError:
+            return JSONResponse({"error": "openpyxl not installed"}, status_code=500)
+    return JSONResponse({"error": "format must be csv or xlsx"}, status_code=400)
+
+
 # ── Startup: record master load history ─────────────────────────────────────
 
 

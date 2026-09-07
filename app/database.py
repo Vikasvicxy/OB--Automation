@@ -409,6 +409,26 @@ def init_db() -> None:
                 updated_at  TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_saved_views_page ON saved_views(page);
+
+            CREATE TABLE IF NOT EXISTS uat_runs (
+                run_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                started_at  TEXT NOT NULL,
+                completed_at TEXT,
+                status      TEXT NOT NULL DEFAULT 'active',
+                notes       TEXT DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS uat_results (
+                result_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id      INTEGER NOT NULL,
+                test_id     TEXT NOT NULL,
+                status      TEXT NOT NULL DEFAULT 'NOT_TESTED',
+                notes       TEXT DEFAULT '',
+                tested_at   TEXT,
+                FOREIGN KEY (run_id) REFERENCES uat_runs(run_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_uat_results_run ON uat_results(run_id);
+            CREATE INDEX IF NOT EXISTS idx_uat_results_test ON uat_results(test_id);
             """
         )
 
@@ -2434,6 +2454,159 @@ def get_candidates_safe(candidate_ids: list[int]) -> list[dict]:
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+# ── UAT (Manual Acceptance Test) helpers ─────────────────────────────────────
+
+def uat_start_run(notes: str = "") -> int:
+    """Create a new UAT run. Returns the run_id."""
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO uat_runs (started_at, status, notes) VALUES (?, 'active', ?)",
+            (_now(), notes),
+        )
+        run_id = cur.lastrowid
+        conn.commit()
+        return run_id
+    finally:
+        conn.close()
+
+
+def uat_finish_run(run_id: int) -> bool:
+    """Mark a UAT run as completed."""
+    conn = _get_connection()
+    try:
+        conn.execute(
+            "UPDATE uat_runs SET completed_at = ?, status = 'completed' WHERE run_id = ?",
+            (_now(), run_id),
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def uat_get_run(run_id: int) -> Optional[dict]:
+    """Return a single UAT run."""
+    conn = _get_connection()
+    try:
+        row = conn.execute("SELECT * FROM uat_runs WHERE run_id = ?", (run_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def uat_list_runs(limit: int = 50) -> list[dict]:
+    """Return recent UAT runs with summary stats."""
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT r.run_id, r.started_at, r.completed_at, r.status, r.notes, "
+            "COUNT(res.result_id) AS total, "
+            "SUM(CASE WHEN res.status = 'PASS' THEN 1 ELSE 0 END) AS passed, "
+            "SUM(CASE WHEN res.status = 'FAIL' THEN 1 ELSE 0 END) AS failed, "
+            "SUM(CASE WHEN res.status = 'BLOCKED' THEN 1 ELSE 0 END) AS blocked, "
+            "SUM(CASE WHEN res.status = 'NOT_TESTED' THEN 1 ELSE 0 END) AS not_tested "
+            "FROM uat_runs r "
+            "LEFT JOIN uat_results res ON res.run_id = r.run_id "
+            "GROUP BY r.run_id "
+            "ORDER BY r.run_id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def uat_get_results(run_id: int) -> list[dict]:
+    """Return all results for a UAT run."""
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM uat_results WHERE run_id = ? ORDER BY test_id",
+            (run_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def uat_upsert_result(run_id: int, test_id: str, status: str,
+                      notes: str = "") -> int:
+    """Insert or update a single UAT test result. Returns result_id."""
+    VALID = {"PASS", "FAIL", "NOT_TESTED", "BLOCKED"}
+    if status not in VALID:
+        raise ValueError(f"Invalid status: {status}. Must be one of {VALID}")
+    conn = _get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT result_id FROM uat_results WHERE run_id = ? AND test_id = ?",
+            (run_id, test_id),
+        ).fetchone()
+        now = _now()
+        if existing:
+            conn.execute(
+                "UPDATE uat_results SET status = ?, notes = ?, tested_at = ? "
+                "WHERE result_id = ?",
+                (status, notes, now, existing["result_id"]),
+            )
+            result_id = existing["result_id"]
+        else:
+            cur = conn.execute(
+                "INSERT INTO uat_results (run_id, test_id, status, notes, tested_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (run_id, test_id, status, notes, now),
+            )
+            result_id = cur.lastrowid
+        conn.commit()
+        return result_id
+    finally:
+        conn.close()
+
+
+def uat_get_summary(run_id: int) -> dict:
+    """Return summary counts for a UAT run."""
+    conn = _get_connection()
+    try:
+        row = conn.execute(
+            "SELECT "
+            "COUNT(*) AS total, "
+            "SUM(CASE WHEN status = 'PASS' THEN 1 ELSE 0 END) AS passed, "
+            "SUM(CASE WHEN status = 'FAIL' THEN 1 ELSE 0 END) AS failed, "
+            "SUM(CASE WHEN status = 'BLOCKED' THEN 1 ELSE 0 END) AS blocked, "
+            "SUM(CASE WHEN status = 'NOT_TESTED' THEN 1 ELSE 0 END) AS not_tested "
+            "FROM uat_results WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        d = dict(row) if row else {"total": 0, "passed": 0, "failed": 0,
+                                    "blocked": 0, "not_tested": 0}
+        for k in ("total", "passed", "failed", "blocked", "not_tested"):
+            if d[k] is None:
+                d[k] = 0
+        completed = d["passed"] + d["failed"] + d["blocked"]
+        d["completion_pct"] = round(100 * completed / d["total"], 1) if d["total"] else 0
+        return d
+    finally:
+        conn.close()
+
+
+def uat_export_results(run_id: int) -> list[dict]:
+    """Return results formatted for export (safe fields only)."""
+    results = uat_get_results(run_id)
+    run = uat_get_run(run_id)
+    run_label = f"Run {run_id}"
+    out = []
+    for r in results:
+        out.append({
+            "run_id": run_id,
+            "group": r["test_id"].split("_")[0] if "_" in r["test_id"] else r["test_id"][0],
+            "test_id": r["test_id"],
+            "status": r["status"],
+            "notes": r["notes"] or "",
+            "tested_at": r["tested_at"] or "",
+        })
+    return out
 
 
 init_db()

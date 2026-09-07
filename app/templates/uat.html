@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UAT - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <style>
+        .uat-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px}
+        .uat-progress{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:20px}
+        .uat-kpi{background:var(--bg-card,#fff);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;text-align:center}
+        .uat-kpi .val{font-size:1.6rem;font-weight:800}
+        .uat-kpi .lbl{font-size:0.78rem;color:var(--text-secondary);margin-top:4px}
+        .uat-kpi.kpi-pass .val{color:#0a7a4c}
+        .uat-kpi.kpi-fail .val{color:#b3261e}
+        .uat-kpi.kpi-block .val{color:#92400e}
+        .uat-kpi.kpi-nt .val{color:#64748b}
+        .uat-kpi.kpi-pct .val{color:var(--accent-blue)}
+        .run-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--bg-card,#fff);border:1px solid var(--border);border-radius:var(--radius-sm)}
+        .run-bar .run-label{font-weight:700;font-size:0.88rem}
+        .run-bar .run-info{font-size:0.78rem;color:var(--text-secondary);margin-left:auto}
+        .uat-group{margin-bottom:16px;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+        .uat-group-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-card,#f8fafc);cursor:pointer;user-select:none;border-bottom:1px solid var(--border)}
+        .uat-group-head:hover{background:var(--bg-hover,#f1f5f9)}
+        .uat-group-head .grp-arrow{transition:transform 0.2s;font-size:0.7rem}
+        .uat-group.open .grp-arrow{transform:rotate(90deg)}
+        .uat-group-head .grp-title{font-weight:700;font-size:0.88rem}
+        .uat-group-head .grp-summary{font-size:0.78rem;color:var(--text-secondary);margin-left:auto}
+        .uat-group-body{display:none}
+        .uat-group.open .uat-group-body{display:block}
+        .uat-row{display:grid;grid-template-columns:70px 1fr 110px 1fr 80px;gap:8px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);font-size:0.82rem}
+        .uat-row:last-child{border-bottom:none}
+        .uat-row:hover{background:var(--bg-hover,#f8fafc)}
+        .uat-row .tid{font-weight:700;font-family:monospace}
+        .uat-row .tname{color:var(--text-primary)}
+        .uat-status-btns{display:flex;gap:4px}
+        .uat-status-btns button{padding:3px 8px;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:600}
+        .uat-status-btns button.btn-pass{background:#e6f7ee;color:#0a7a4c;border-color:#a3d9b1}
+        .uat-status-btns button.btn-fail{background:#fee2e2;color:#991b1b;border-color:#fca5a5}
+        .uat-status-btns button.btn-block{background:#fef3c7;color:#92400e;border-color:#fcd34d}
+        .uat-status-btns button.btn-reset{background:#f1f5f9;color:#64748b;border-color:#e2e8f0}
+        .uat-status-btns button.active{box-shadow:0 0 0 2px var(--accent-blue)}
+        .uat-row .status-badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700}
+        .status-PASS{background:#e6f7ee;color:#0a7a4c}
+        .status-FAIL{background:#fee2e2;color:#991b1b}
+        .status-BLOCKED{background:#fef3c7;color:#92400e}
+        .status-NOT_TESTED{background:#f1f5f9;color:#64748b}
+        .uat-row .notes-input{width:100%;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:0.78rem}
+        .uat-row .tested-at{font-size:0.72rem;color:var(--text-secondary);white-space:nowrap}
+        .uat-filter-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+        .uat-filter-bar button{padding:4px 12px;border-radius:var(--radius-pill);border:1px solid var(--border);background:var(--bg-card,#fff);font-size:0.78rem;cursor:pointer;color:var(--text-secondary)}
+        .uat-filter-bar button.active{background:var(--accent-blue);color:#fff;border-color:var(--accent-blue)}
+        .uat-filter-bar input{padding:5px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;max-width:200px}
+        .uat-run-history{margin-top:20px}
+        .uat-run-history table{width:100%;font-size:0.82rem}
+        .uat-run-history th{background:var(--bg-card,#f1f5f9);padding:8px 10px;text-align:left;font-weight:600;border-bottom:2px solid var(--border)}
+        .uat-run-history td{padding:6px 10px;border-bottom:1px solid var(--border)}
+        .uat-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+        .uat-actions .btn{font-size:0.82rem}
+        .issue-report{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:200;justify-content:center;align-items:center}
+        .issue-report.show{display:flex}
+        .issue-report .modal{background:#fff;border-radius:8px;padding:20px;width:90%;max-width:500px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+        .issue-report pre{background:#f8fafc;border:1px solid var(--border);border-radius:6px;padding:12px;font-size:0.82rem;white-space:pre-wrap;word-break:break-all}
+        .issue-report .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    </style>
+</head>
+<body>
+    {% set nav_active = 'uat' %}
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> UAT</div>
+                <h1 class="page-title">TeamHR Manual Acceptance Test</h1>
+                <p class="page-subtitle">Record PASS / FAIL / BLOCKED for each feature area</p>
+            </div>
+        </header>
+
+        {# ── Overall Progress ────────────────────────────── #}
+        <div class="uat-progress" id="progressBar">
+            <div class="uat-kpi"><div class="val" id="kpiTotal">0</div><div class="lbl">Total</div></div>
+            <div class="uat-kpi kpi-pass"><div class="val" id="kpiPass">0</div><div class="lbl">Passed</div></div>
+            <div class="uat-kpi kpi-fail"><div class="val" id="kpiFail">0</div><div class="lbl">Failed</div></div>
+            <div class="uat-kpi kpi-block"><div class="val" id="kpiBlocked">0</div><div class="lbl">Blocked</div></div>
+            <div class="uat-kpi kpi-nt"><div class="val" id="kpiNT">0</div><div class="lbl">Not Tested</div></div>
+            <div class="uat-kpi kpi-pct"><div class="val" id="kpiPct">0%</div><div class="lbl">Completion</div></div>
+        </div>
+
+        {# ── Run Bar ─────────────────────────────────────── #}
+        <div class="run-bar" id="runBar">
+            <span class="run-label" id="runLabel">No active run</span>
+            <span class="run-info" id="runInfo"></span>
+        </div>
+
+        {# ── Actions ─────────────────────────────────────── #}
+        <div class="uat-actions">
+            <button class="btn btn-primary" id="btnNewRun" onclick="startNewRun()">Start New UAT Run</button>
+            <button class="btn btn-outline" id="btnResumeRun" onclick="resumeRun()" style="display:none">Resume Current Run</button>
+            <button class="btn btn-success" id="btnFinishRun" onclick="finishRun()" style="display:none">Finish Run</button>
+            <button class="btn btn-outline" id="btnExportCsv" onclick="exportCsv()" style="display:none">Export CSV</button>
+            <button class="btn btn-outline" id="btnExportXlsx" onclick="exportXlsx()" style="display:none">Export XLSX</button>
+        </div>
+
+        {# ── Filters ──────────────────────────────────────── #}
+        <div class="uat-filter-bar" id="filterBar">
+            <button class="active" data-filter="all" onclick="setFilter('all')">All</button>
+            <button data-filter="PASS" onclick="setFilter('PASS')">Passed</button>
+            <button data-filter="FAIL" onclick="setFilter('FAIL')">Failed</button>
+            <button data-filter="BLOCKED" onclick="setFilter('BLOCKED')">Blocked</button>
+            <button data-filter="NOT_TESTED" onclick="setFilter('NOT_TESTED')">Not Tested</button>
+            <input type="text" id="testSearch" placeholder="Search test ID or name..." oninput="applySearchFilter()">
+        </div>
+
+        {# ── Test Groups ──────────────────────────────────── #}
+        <div id="testGroups">
+            {% for group in groups %}
+            <div class="uat-group open" data-group="{{ group.key }}">
+                <div class="uat-group-head" onclick="toggleGroup('{{ group.key }}')">
+                    <span class="grp-arrow">&#9654;</span>
+                    <span class="grp-title">{{ group.key }} &mdash; {{ group.label }}</span>
+                    <span class="grp-summary" id="grpSummary{{ group.key }}">
+                        <span class="grp-pass-ct">0</span> Passed /
+                        <span class="grp-fail-ct">0</span> Failed /
+                        <span class="grp-nt-ct">0</span> Not Tested
+                    </span>
+                </div>
+                <div class="uat-group-body">
+                    <div class="uat-row" style="font-weight:700;color:var(--text-secondary);font-size:0.75rem">
+                        <div>Test ID</div>
+                        <div>Test Name</div>
+                        <div>Status</div>
+                        <div>Notes</div>
+                        <div>Tested At</div>
+                    </div>
+                    {% for tid, tname in group.tests %}
+                    <div class="uat-row" data-tid="{{ tid }}" data-status="NOT_TESTED">
+                        <div class="tid">{{ tid }}</div>
+                        <div class="tname">{{ tname }}</div>
+                        <div class="uat-status-btns">
+                            <button class="btn-pass" onclick="setResult('{{ tid }}','PASS')" title="PASS">&#10003;</button>
+                            <button class="btn-fail" onclick="setResult('{{ tid }}','FAIL')" title="FAIL">&#10007;</button>
+                            <button class="btn-block" onclick="setResult('{{ tid }}','BLOCKED')" title="BLOCKED">&#9644;</button>
+                            <button class="btn-reset" onclick="setResult('{{ tid }}','NOT_TESTED')" title="Reset">&#8634;</button>
+                        </div>
+                        <div>
+                            <input type="text" class="notes-input" data-tid="{{ tid }}" placeholder="Notes (required for FAIL/BLOCKED)" onblur="saveNotes('{{ tid }}', this.value)">
+                            <button class="btn btn-sm btn-outline" style="margin-top:4px;font-size:0.7rem;display:none" data-copy-issue="{{ tid }}" onclick="copyIssue('{{ tid }}')">Copy Issue</button>
+                        </div>
+                        <div class="tested-at" data-tid-at="{{ tid }}"></div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {# ── Run History ──────────────────────────────────── #}
+        <div class="uat-run-history" id="runHistory">
+            <h3 style="margin-bottom:10px">Run History</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Run ID</th>
+                        <th>Started</th>
+                        <th>Completed</th>
+                        <th>Passed</th>
+                        <th>Failed</th>
+                        <th>Blocked</th>
+                        <th>Completion</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="runHistoryBody">
+                    {% for r in runs %}
+                    <tr>
+                        <td>#{{ r.run_id }}</td>
+                        <td>{{ r.started_at }}</td>
+                        <td>{{ r.completed_at or '—' }}</td>
+                        <td>{{ r.passed or 0 }}</td>
+                        <td>{{ r.failed or 0 }}</td>
+                        <td>{{ r.blocked or 0 }}</td>
+                        <td>{{ ((r.passed or 0) + (r.failed or 0) + (r.blocked or 0)) | round(0) }}/{{ r.total or 0 }}</td>
+                        <td><span class="status-badge status-{{ 'PASS' if r.status == 'completed' else 'NOT_TESTED' }}">{{ r.status }}</span></td>
+                        <td>
+                            {% if r.status == 'active' %}
+                            <button class="btn btn-sm btn-outline" onclick="resumeRunById({{ r.run_id }})">Resume</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    {# ── Issue Report Modal ──────────────────────────────── #}
+    <div class="issue-report" id="issueReportModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Issue Report</h3>
+                <button class="modal-close" onclick="closeIssueModal()">&times;</button>
+            </div>
+            <pre id="issueReportText"></pre>
+            <div style="margin-top:12px;display:flex;gap:8px">
+                <button class="btn btn-primary btn-sm" onclick="copyIssueToClipboard()">Copy to Clipboard</button>
+                <button class="btn btn-outline btn-sm" onclick="closeIssueModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+    (function() {
+        var currentRunId = {{ current_run.run_id if current_run else 'null' }};
+        var results = {{ results | tojson }};
+        var notesMap = {};
+        var statusMap = {};
+        var searchFilter = '';
+
+        // Load existing results into state
+        for (var i = 0; i < results.length; i++) {
+            var r = results[i];
+            statusMap[r.test_id] = r.status;
+            notesMap[r.test_id] = r.notes || '';
+            var row = document.querySelector('[data-tid="' + r.test_id + '"]');
+            if (row) {
+                row.setAttribute('data-status', r.status);
+                var inp = row.querySelector('.notes-input');
+                if (inp) inp.value = r.notes || '';
+                var atEl = document.querySelector('[data-tid-at="' + r.test_id + '"]');
+                if (atEl) atEl.textContent = r.tested_at || '';
+                // Show copy issue button for FAIL
+                if (r.status === 'FAIL') {
+                    var copyBtn = document.querySelector('[data-copy-issue="' + r.test_id + '"]');
+                    if (copyBtn) copyBtn.style.display = '';
+                }
+            }
+        }
+        updateUI();
+
+        window.startNewRun = function() {
+            if (!confirm('Start a new UAT run? Previous results are preserved.')) return;
+            fetch('/api/uat/run/start', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({notes:''})})
+            .then(function(r){return r.json()}).then(function(d){
+                if (d.ok) { currentRunId = d.run_id; window.showToast('Run #' + d.run_id + ' started', 'success'); location.reload(); }
+                else window.showToast(d.error || 'Failed', 'error');
+            }).catch(function(){window.showToast('Network error','error')});
+        };
+
+        window.resumeRun = function() {
+            if (currentRunId) window.location.href = '/uat?run=' + currentRunId;
+        };
+
+        window.resumeRunById = function(rid) {
+            window.location.href = '/uat?run=' + rid;
+        };
+
+        window.finishRun = function() {
+            if (!currentRunId) return;
+            if (!confirm('Finish UAT run #' + currentRunId + '?')) return;
+            fetch('/api/uat/run/' + currentRunId + '/finish', {method:'POST'})
+            .then(function(r){return r.json()}).then(function(d){
+                if (d.ok) { window.showToast('Run #' + currentRunId + ' completed', 'success'); location.reload(); }
+                else window.showToast(d.error || 'Failed', 'error');
+            }).catch(function(){window.showToast('Network error','error')});
+        };
+
+        window.setResult = function(tid, status) {
+            if (!currentRunId) { window.showToast('Start or resume a UAT run first', 'warning'); return; }
+            if ((status === 'FAIL' || status === 'BLOCKED') && !notesMap[tid]) {
+                var note = prompt('Notes required for ' + status + ' (test ' + tid + '):');
+                if (note === null) return;
+                notesMap[tid] = note;
+                var inp = document.querySelector('.notes-input[data-tid="' + tid + '"]');
+                if (inp) inp.value = note;
+            }
+            fetch('/api/uat/result', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({run_id:currentRunId, test_id:tid, status:status, notes:notesMap[tid]||''})
+            })
+            .then(function(r){return r.json()}).then(function(d){
+                if (d.ok) {
+                    statusMap[tid] = d.status;
+                    var row = document.querySelector('[data-tid="' + tid + '"]');
+                    if (row) {
+                        row.setAttribute('data-status', d.status);
+                        var atEl = document.querySelector('[data-tid-at="' + tid + '"]');
+                        if (atEl) atEl.textContent = d.tested_at || '';
+                    }
+                    var copyBtn = document.querySelector('[data-copy-issue="' + tid + '"]');
+                    if (copyBtn) copyBtn.style.display = d.status === 'FAIL' ? '' : 'none';
+                    updateUI();
+                }
+                else window.showToast(d.error || 'Failed', 'error');
+            }).catch(function(){window.showToast('Network error','error')});
+        };
+
+        window.saveNotes = function(tid, val) {
+            notesMap[tid] = val;
+        };
+
+        window.setFilter = function(f) {
+            document.querySelectorAll('.uat-filter-bar button').forEach(function(b){b.classList.remove('active')});
+            document.querySelector('[data-filter="' + f + '"]').classList.add('active');
+            applySearchFilter();
+        };
+
+        window.applySearchFilter = function() {
+            var activeFilter = document.querySelector('.uat-filter-bar button.active').getAttribute('data-filter');
+            var q = document.getElementById('testSearch').value.toLowerCase();
+            var rows = document.querySelectorAll('.uat-row[data-tid]');
+            for (var i = 0; i < rows.length; i++) {
+                var row = rows[i];
+                var tid = row.getAttribute('data-tid');
+                var st = statusMap[tid] || 'NOT_TESTED';
+                var tname = row.querySelector('.tname').textContent.toLowerCase();
+                var showFilter = activeFilter === 'all' || st === activeFilter;
+                var showSearch = !q || tid.toLowerCase().indexOf(q) > -1 || tname.indexOf(q) > -1;
+                row.style.display = (showFilter && showSearch) ? '' : 'none';
+            }
+        };
+
+        function updateUI() {
+            var total = 0, pass = 0, fail = 0, block = 0, nt = 0;
+            var groupStats = {};
+            var rows = document.querySelectorAll('.uat-row[data-tid]');
+            for (var i = 0; i < rows.length; i++) {
+                var tid = rows[i].getAttribute('data-tid');
+                var st = statusMap[tid] || 'NOT_TESTED';
+                var gid = tid.replace(/[0-9]+$/, '');
+                if (!groupStats[gid]) groupStats[gid] = {pass:0,fail:0,block:0,nt:0,total:0};
+                groupStats[gid].total++;
+                total++;
+                if (st === 'PASS') { pass++; groupStats[gid].pass++; }
+                else if (st === 'FAIL') { fail++; groupStats[gid].fail++; }
+                else if (st === 'BLOCKED') { block++; groupStats[gid].block++; }
+                else { nt++; groupStats[gid].nt++; }
+            }
+            document.getElementById('kpiTotal').textContent = total;
+            document.getElementById('kpiPass').textContent = pass;
+            document.getElementById('kpiFail').textContent = fail;
+            document.getElementById('kpiBlocked').textContent = block;
+            document.getElementById('kpiNT').textContent = nt;
+            var completed = pass + fail + block;
+            document.getElementById('kpiPct').textContent = total ? Math.round(100 * completed / total) + '%' : '0%';
+
+            for (var gid2 in groupStats) {
+                var el = document.getElementById('grpSummary' + gid2);
+                if (el) {
+                    var s = groupStats[gid2];
+                    el.innerHTML = '<span class="grp-pass-ct">' + s.pass + '</span> Passed / ' +
+                        '<span class="grp-fail-ct">' + s.fail + '</span> Failed / ' +
+                        '<span class="grp-nt-ct">' + s.nt + '</span> Not Tested';
+                }
+            }
+
+            var hasRun = !!currentRunId;
+            document.getElementById('btnResumeRun').style.display = hasRun ? '' : 'none';
+            document.getElementById('btnFinishRun').style.display = hasRun ? '' : 'none';
+            document.getElementById('btnExportCsv').style.display = hasRun ? '' : 'none';
+            document.getElementById('btnExportXlsx').style.display = hasRun ? '' : 'none';
+            if (hasRun) {
+                document.getElementById('runLabel').textContent = 'Run #' + currentRunId + ' (active)';
+                document.getElementById('runInfo').textContent = pass + ' pass / ' + fail + ' fail / ' + block + ' blocked / ' + nt + ' not tested';
+            }
+        }
+
+        window.toggleGroup = function(gid) {
+            var el = document.querySelector('[data-group="' + gid + '"]');
+            if (el) el.classList.toggle('open');
+        };
+
+        // Issue report
+        window.copyIssue = function(tid) {
+            var gid = tid.replace(/[0-9]+$/, '');
+            var group = '{{ groups_map | tojson }}';
+            var groupObj = null;
+            try { groupObj = JSON.parse(group); } catch(e) {}
+            var testName = tid;
+            if (groupObj) {
+                for (var k in groupObj) {
+                    if (groupObj[k] && groupObj[k][tid]) { testName = groupObj[k][tid]; break; }
+                }
+            }
+            var text = 'Test: ' + tid + ' ' + testName + '\n' +
+                'Expected: \n' +
+                'Actual: \n' +
+                'Notes: ' + (notesMap[tid] || '') + '\n' +
+                'Candidate ID if relevant: \n' +
+                'Time: ' + new Date().toLocaleString();
+            document.getElementById('issueReportText').textContent = text;
+            document.getElementById('issueReportModal').classList.add('show');
+        };
+
+        window.copyIssueToClipboard = function() {
+            var text = document.getElementById('issueReportText').textContent;
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(function(){ window.showToast('Copied to clipboard', 'success'); });
+            } else {
+                var ta = document.createElement('textarea');
+                ta.value = text; document.body.appendChild(ta); ta.select();
+                document.execCommand('copy'); document.body.removeChild(ta);
+                window.showToast('Copied to clipboard', 'success');
+            }
+        };
+
+        window.closeIssueModal = function() {
+            document.getElementById('issueReportModal').classList.remove('show');
+        };
+
+        window.exportCsv = function() {
+            if (!currentRunId) return;
+            window.location.href = '/api/uat/export?run_id=' + currentRunId + '&format=csv';
+        };
+
+        window.exportXlsx = function() {
+            if (!currentRunId) return;
+            window.location.href = '/api/uat/export?run_id=' + currentRunId + '&format=xlsx';
+        };
+
+        updateUI();
+    })();
+    </script>
+</body>
+</html>
