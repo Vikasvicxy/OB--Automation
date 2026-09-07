@@ -21,6 +21,7 @@ Design invariants
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -33,6 +34,18 @@ from app import master_data
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT_DIR = BASE_DIR / "data" / "generated"
 CONFIG_FILE = BASE_DIR / "data" / "config.json"
+
+# Optional test override: point the runtime config file at a temporary path so
+# test runs never mutate the production/local ``data/config.json``. When unset,
+# the production config file is used (unchanged behaviour).
+CONFIG_FILE_ENV = "TEAMHR_CONFIG_FILE"
+
+
+def config_file() -> Path:
+    override = os.environ.get(CONFIG_FILE_ENV, "").strip()
+    if override:
+        return Path(override)
+    return CONFIG_FILE
 
 TEMPLATE_FILE = master_data.MASTERS_DIR / master_data.MASTER_FILES["self_onboarding"]
 
@@ -53,17 +66,19 @@ CITY_STATE = {
 
 
 def _load_config() -> dict:
+    cf = config_file()
     try:
-        if CONFIG_FILE.exists():
-            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        if cf.exists():
+            return json.loads(cf.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         pass
     return {}
 
 
 def _save_config(cfg: dict) -> None:
-    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    cf = config_file()
+    cf.parent.mkdir(parents=True, exist_ok=True)
+    cf.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
 
 
 def get_output_base_dir() -> Path:

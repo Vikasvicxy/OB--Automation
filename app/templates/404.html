@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Not Found - TeamHR</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+</head>
+<body>
+    {% set nav_active = '' %}
+    {% include 'partials/_sidebar.html' %}
+    <main class="content">
+        <header class="topbar">
+            <h1 class="page-title">Not Found</h1>
+        </header>
+        <section class="settings-section">
+            <p class="page-subtitle">{{ message or 'The requested page was not found.' }}</p>
+            <p><a href="/" class="btn btn-sm btn-outline">&larr; Back to Dashboard</a></p>
+        </section>
+    </main>
+    {% include 'partials/_toast.html' %}
+</body>
+</html>

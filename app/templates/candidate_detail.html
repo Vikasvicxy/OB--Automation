@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candidate #{{ candidate.candidate_id }} - TeamHR</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <style>
+        .cd-nav{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+        .cd-nav .cd-links{display:flex;gap:10px;flex-wrap:wrap}
+        .cd-headcard{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+        .cd-id{font-size:0.85rem;color:var(--text-secondary)}
+        .cd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:14px}
+        .cd-field{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px}
+        .cd-field .cd-label{font-size:0.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary);margin-bottom:4px}
+        .cd-field .cd-value{font-size:0.95rem;color:var(--text-primary);word-break:break-word}
+        .cd-section{margin-top:24px}
+        .cd-section h3{font-size:1rem;margin-bottom:10px}
+        .empty-note{font-size:0.85rem;color:var(--text-secondary);font-style:italic}
+        .ev-row{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)}
+        .ev-row:last-child{border-bottom:none}
+        .ev-type{min-width:150px;font-weight:600;font-size:0.85rem}
+        .ev-summary{flex:1;font-size:0.85rem}
+        .ev-time{white-space:nowrap;font-size:0.75rem;color:var(--text-secondary)}
+        .hist-change{font-size:0.85rem;margin:3px 0}
+        .hist-change b{font-weight:600}
+        .hist-field{font-weight:600;color:var(--accent-blue);text-transform:capitalize}
+        .reason-list{margin:0;padding-left:18px}
+        .reason-list li{font-size:0.85rem;margin:3px 0}
+        .cd-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.75rem;font-weight:600}
+        .cd-badge ok{background:#e6f7ee;color:#1a7f42}
+        .cd-badge bad{background:#fdecec;color:#b3261e}
+        .kbd{display:inline-block;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:0.72rem;background:var(--bg-card);color:var(--text-secondary);margin-right:4px}
+    </style>
+</head>
+<body>
+    {% set nav_active = 'candidates' %}
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div class="cd-headcard">
+                <div>
+                    <div class="breadcrumb">
+                        <a href="/">Dashboard</a> <span class="bc-sep">/</span>
+                        <a href="/candidates">Candidates</a> <span class="bc-sep">/</span>
+                        Candidate #{{ candidate.candidate_id }}
+                    </div>
+                    <h1 class="page-title">{{ candidate.name or 'Unnamed Candidate' }}</h1>
+                    <p class="page-subtitle">
+                        #{{ candidate.candidate_id }} &middot; Batch {{ candidate.batch_id or '-' }}
+                        &middot; <span class="status-badge status-{{ (candidate.status or 'draft') | lower | replace(' ', '-') }}">{{ candidate.status or 'Draft' }}</span>
+                    </p>
+                </div>
+                <div class="cd-links">
+                    <a href="/manual-entry?edit={{ candidate.candidate_id }}" class="btn btn-sm btn-outline">Edit</a>
+                </div>
+            </div>
+        </header>
+
+        <nav class="cd-nav" aria-label="Candidate navigation">
+            <div class="cd-links">
+                {% if prev_id %}
+                <a href="/candidates/{{ prev_id }}" class="btn btn-sm btn-outline" data-prev-next="prev">&larr; Previous</a>
+                {% else %}
+                <span class="btn btn-sm btn-outline" disabled aria-disabled="true">&larr; Previous</span>
+                {% endif %}
+                {% if next_id %}
+                <a href="/candidates/{{ next_id }}" class="btn btn-sm btn-outline" data-prev-next="next">Next &rarr;</a>
+                {% else %}
+                <span class="btn btn-sm btn-outline" disabled aria-disabled="true">Next &rarr;</span>
+                {% endif %}
+            </div>
+            <div class="cd-id">
+                <span class="kbd">Alt</span>+<span class="kbd">P</span> Previous
+                <span class="kbd">Alt</span>+<span class="kbd">N</span> Next
+            </div>
+        </nav>
+
+        <section class="settings-section">
+            <h3 class="settings-heading">Details</h3>
+            <div class="cd-grid">
+                <div class="cd-field"><div class="cd-label">Name</div><div class="cd-value">{{ candidate.name or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Mobile</div><div class="cd-value">{{ candidate.mobile or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">DOB</div><div class="cd-value">{{ candidate.dob or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Aadhaar</div><div class="cd-value">{{ candidate.aadhaar_number or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Address</div><div class="cd-value">{{ candidate.address or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Entity</div><div class="cd-value">{{ candidate.entity or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Operation</div><div class="cd-value">{{ candidate.operation or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Cost Code</div><div class="cd-value">{{ candidate.cost_code or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Designation / Role</div><div class="cd-value">{{ candidate.designation or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Facility</div><div class="cd-value">{{ candidate.facility_name or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Location</div><div class="cd-value">{{ candidate.location_code or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Salary</div><div class="cd-value">{{ candidate.salary_display or candidate.salary or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Migrant</div><div class="cd-value">{{ candidate.migrant or 'No' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Status</div><div class="cd-value">{{ candidate.status or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Batch</div><div class="cd-value">{{ candidate.batch_id or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Created</div><div class="cd-value">{{ candidate.created_date or '—' }} {{ candidate.created_time or '' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Updated</div><div class="cd-value">{{ candidate.updated_at or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Portal Status</div><div class="cd-value">{{ candidate.portal_status or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Portal Remarks</div><div class="cd-value">{{ candidate.portal_remarks or '—' }}</div></div>
+            </div>
+        </section>
+
+        <section class="cd-section settings-section">
+            <h3 class="settings-heading">Timeline / Audit</h3>
+            {% if events %}
+            {% for ev in events %}
+            <div class="ev-row">
+                <div class="ev-type">{{ ev.event_type }}</div>
+                <div class="ev-summary">{{ ev.summary or '' }}</div>
+                <div class="ev-time">{{ ev.created_at }}</div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="empty-note">No timeline events yet</p>
+            {% endif %}
+        </section>
+
+        <section class="cd-section settings-section">
+            <h3 class="settings-heading">Edit History</h3>
+            {% if edit_history %}
+            {% for h in edit_history %}
+            <div class="hist-change">
+                <span class="hist-field">{{ h.field_name }}</span>:
+                {% if h.field_name == 'aadhaar_number' or h.field_name == 'address' %}
+                <span>{{ h.new_value }}</span>
+                {% else %}
+                <span>{{ h.old_value or '—' }}</span> &rarr; <span>{{ h.new_value or '—' }}</span>
+                {% endif %}
+                <span class="ev-time">({{ h.edited_at }})</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="empty-note">No edit history yet</p>
+            {% endif %}
+        </section>
+
+        <section class="cd-section settings-section">
+            <h3 class="settings-heading">Evidence / Why</h3>
+            {% set ev_fields = (evidence or {}).items() %}
+            {% if evidence and (ev_fields | list | length) %}
+                {% for field, info in ev_fields %}
+                <div class="ev-row">
+                    <div class="ev-type">{{ field | replace('_', ' ') | title }}</div>
+                    <div class="ev-summary">
+                        <span class="cd-badge 
+                            {%- if info.confidence == 'High' %} ok{% elif info.confidence == 'Conflict' %} bad{% endif -%}
+                        ">{{ info.confidence or '—' }}</span>
+                        <span>&nbsp;Selected: <b>{{ info.selected_value or '—' }}</b></span>
+                        {% if info.selected_reasons %}
+                        <ul class="reason-list">
+                            {% for r in info.selected_reasons %}<li>{{ r }}</li>{% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <p class="empty-note">No evidence available</p>
+            {% endif %}
+        </section>
+
+        <section class="cd-section settings-section">
+            <h3 class="settings-heading">Documents</h3>
+            {% if documents %}
+            <table class="data-table">
+                <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Uploaded</th></tr></thead>
+                <tbody>
+                    {% for d in documents %}
+                    <tr>
+                        <td>{{ d.filename or '—' }}</td>
+                        <td>{{ d.document_type or 'Other' }}</td>
+                        <td>{{ d.extraction_status or '—' }}</td>
+                        <td>{{ d.uploaded_at or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty-note">No documents available</p>
+            {% endif %}
+        </section>
+
+        <section class="cd-section settings-section">
+            <h3 class="settings-heading">Generated Files</h3>
+            {% if generated_files %}
+            <table class="data-table">
+                <thead><tr><th>Filename</th><th>Batch</th><th>Created</th><th>Portal Status</th><th>Action</th></tr></thead>
+                <tbody>
+                    {% for f in generated_files %}
+                    <tr>
+                        <td>{{ f.filename or '—' }}</td>
+                        <td>{{ f.batch_id or '—' }}</td>
+                        <td>{{ f.generated_at or '—' }}</td>
+                        <td>{{ f.portal_status or '—' }}</td>
+                        <td>
+                            {% if f.portal_result_path %}
+                            <a href="/api/generated-file/{{ f.file_id }}/result" class="btn btn-sm btn-outline">View Result</a>
+                            {% else %}<span class="empty-note">No action</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty-note">No generated files</p>
+            {% endif %}
+        </section>
+
+        <section class="cd-section settings-section">
+            <h3 class="settings-heading">Portal History</h3>
+            {% macro portal_live_row(l) %}
+            <div class="ev-row">
+                <div class="ev-type">Live Upload</div>
+                <div class="ev-summary">
+                    Status: <b>{{ l.portal_status or '—' }}</b> &middot; Flow: {{ l.flow_status or '—' }}
+                    {% if l.success_count is not none %}&middot; Success: {{ l.success_count }}{% endif %}
+                    {% if l.failed_count is not none %}&middot; Failed: {{ l.failed_count }}{% endif %}
+                    {% if l.creation_remarks %}&middot; Remarks: {{ l.creation_remarks }}{% endif %}
+                    {% if l.portal_reference %}&middot; Ref: {{ l.portal_reference }}{% endif %}
+                </div>
+                <div class="ev-time">Submitted: {{ l.submitted_at or '—' }} / Started: {{ l.started_at or '—' }}</div>
+            </div>
+            {% endmacro %}
+
+            {% if (portal.uploads and portal.uploads | length) or (portal.live and portal.live | length) %}
+                {% if portal.uploads and portal.uploads | length %}
+                <h4 style="font-size:0.9rem;margin:8px 0 4px">File Uploads</h4>
+                {% for u in portal.uploads %}
+                <div class="ev-row">
+                    <div class="ev-type">Upload</div>
+                    <div class="ev-summary">
+                        Status: <b>{{ u.portal_status or '—' }}</b>
+                        {% if u.portal_reference %}&middot; Ref: {{ u.portal_reference }}{% endif %}
+                    </div>
+                    <div class="ev-time">Completed: {{ u.completed_at or '—' }}</div>
+                </div>
+                {% endfor %}
+                {% endif %}
+                {% if portal.live and portal.live | length %}
+                <h4 style="font-size:0.9rem;margin:8px 0 4px">Live Single-Candidate</h4>
+                {% for l in portal.live %}{{ portal_live_row(l) }}{% endfor %}
+                {% endif %}
+            {% else %}
+            <p class="empty-note">No portal activity</p>
+            {% endif %}
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+</body>
+</html>

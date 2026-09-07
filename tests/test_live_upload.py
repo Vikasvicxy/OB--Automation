@@ -45,6 +45,9 @@ def fresh_db():
     db.DB_DIR = Path(tmp) / "database"
     db.DB_PATH = db.DB_DIR / "teamhr.db"
     db.init_db()
+    # Isolate the runtime config file so tests never mutate production/local
+    # data/config.json (e.g. generation.set_output_base_dir writes config).
+    os.environ["TEAMHR_CONFIG_FILE"] = str(Path(tmp) / "config.json")
     return tmp
 
 

@@ -107,7 +107,10 @@
                         "<td>" + escapeHtml(c.facility_name || "—") + "</td>" +
                         "<td>" + escapeHtml(c.cost_code || "—") + "</td>" +
                         "<td>" + escapeHtml(card.label) + "</td>" +
-                        "<td><a href='/manual-entry?edit=" + c.candidate_id + "' class='btn btn-sm btn-outline'>Open Candidate</a></td>";
+                        "<td><div class='action-cell'>" +
+                        "<a href='/candidates/" + c.candidate_id + "' class='btn btn-sm btn-outline'>View</a>" +
+                        "<a href='/manual-entry?edit=" + c.candidate_id + "' class='btn btn-sm btn-outline'>Edit</a>" +
+                        "</div></td>";
                     tb.appendChild(tr);
                 });
             }

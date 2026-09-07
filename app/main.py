@@ -147,6 +147,8 @@ async def save_draft(request: Request):
             "address": data.get("address", ""),
             "status": "draft",
         })
+        database.record_candidate_event(edit_id, "Manual Review",
+                                        "Draft updated and saved.")
         return JSONResponse({"id": edit_id, "status": "draft"})
 
     cid = database.insert_candidate({
@@ -173,6 +175,8 @@ async def save_draft(request: Request):
     if not draft_files and data.get("aadhaar_filename"):
         draft_files = [data.get("aadhaar_filename")]
     _attach_documents(cid, draft_files or [])
+    database.record_candidate_event(cid, "Manual Review",
+                                    "Draft saved for manual review.")
     return JSONResponse({"id": cid, "status": "draft"})
 
 
@@ -223,6 +227,8 @@ async def confirm_candidate(request: Request):
         })
         if updated:
             _attach_documents(edit_id, data.get("source_files") or [])
+        database.record_candidate_event(edit_id, "Approved",
+                                        "Candidate confirmed and marked ready.")
         return JSONResponse({"id": edit_id, "status": "ready"})
 
     cid = database.insert_candidate({
@@ -248,6 +254,8 @@ async def confirm_candidate(request: Request):
     })
     source_files = data.get("source_files") or (data.get("aadhaar_filename") and [data.get("aadhaar_filename")]) or []
     _attach_documents(cid, source_files)
+    database.record_candidate_event(cid, "Approved",
+                                    "Candidate confirmed and marked ready.")
     return JSONResponse({"id": cid, "status": "ready"})
 
 
@@ -337,6 +345,95 @@ async def candidates_page(request: Request, search: str = ""):
 @app.get("/api/candidates")
 async def api_candidates(search: str = ""):
     return JSONResponse(database.search_candidates(search))
+
+
+# ── Candidate Detail (read-first page) ───────────────────────────────────────
+# The ONLY place where the full Aadhaar number is shown (explicit detail page).
+# The API and other surfaces (search/list/dashboard/data-quality/timeline) never
+# expose the full Aadhaar.
+
+
+def _candidate_context(candidate: dict) -> dict:
+    """Safe metadata used to render the detail page (full Aadhaar is rendered
+    separately and only when the detail template is shown)."""
+    return candidate
+
+
+@app.get("/candidates/{candidate_id}", response_class=HTMLResponse)
+async def candidate_detail_page(request: Request, candidate_id: int):
+    candidate = database.get_candidate(candidate_id)
+    if candidate is None:
+        return templates.TemplateResponse(
+            "404.html",
+            {"request": request, "message": "Candidate not found."},
+            status_code=404,
+        )
+    events = database.list_candidate_events(candidate_id)
+    edit_history = database.list_edit_history(candidate_id)
+    documents = database.get_documents_for_candidate(candidate_id)
+    generated_files = database.get_generated_files_for_candidate(candidate_id)
+    portal = database.get_portal_history_for_candidate(candidate_id)
+    neighbors = database.get_neighbor_candidates(candidate_id)
+
+    # Evidence / Why (safe reason strings only from the resolver snapshots).
+    evidence = None
+    candidate_evidence = candidate.get("evidence_snapshot") or {}
+    try:
+        if isinstance(candidate_evidence, str):
+            candidate_evidence = json.loads(candidate_evidence)
+        if candidate_evidence:
+            evidence = candidate_evidence
+    except Exception:  # noqa: BLE001
+        evidence = None
+
+    return templates.TemplateResponse(
+        "candidate_detail.html",
+        {
+            "request": request,
+            "candidate": candidate,
+            "events": events,
+            "edit_history": edit_history,
+            "documents": documents,
+            "generated_files": generated_files,
+            "portal": portal,
+            "evidence": evidence,
+            "prev_id": neighbors["prev_id"],
+            "next_id": neighbors["next_id"],
+            "nav_active": "candidates",
+        },
+    )
+
+
+@app.get("/api/candidates/{candidate_id}")
+async def api_candidate_detail(candidate_id: int):
+    """Detail API. Returns full Aadhaar ONLY for this explicit detail endpoint;
+    the page uses it to render the detail view. Other APIs stay masked."""
+    candidate = database.get_candidate(candidate_id)
+    if candidate is None:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    candidate["aadhaar_masked"] = database.mask_aadhaar(candidate.get("aadhaar_number", ""))
+    return JSONResponse(candidate)
+
+
+@app.get("/api/generated-file/{file_id}/result")
+async def api_generated_file_result(file_id: int):
+    """Serve a generated file's portal result workbook for preview/open.
+
+    Only serves files that already exist on disk; never performs uploads.
+    """
+    gf = database.get_generated_file(file_id)
+    if gf is None:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    rel = gf.get("portal_result_path") or gf.get("file_path") or ""
+    if not rel:
+        return JSONResponse({"error": "No result file"}, status_code=404)
+    base = generation.get_output_base_dir()
+    candidate_path = Path(rel)
+    full = candidate_path if candidate_path.is_absolute() else base / rel
+    if not full.exists():
+        return JSONResponse({"error": "Result file not found on disk"}, status_code=404)
+    from fastapi.responses import FileResponse
+    return FileResponse(str(full), filename=Path(full).name)
 
 
 @app.get("/api/search")

@@ -282,6 +282,31 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_validation_case ON manual_validation_runs(case_id);
 
+            CREATE TABLE IF NOT EXISTS candidate_events (
+                event_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id  INTEGER NOT NULL,
+                event_type    TEXT NOT NULL,
+                summary       TEXT,
+                created_at    TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_candidate_events_candidate
+                ON candidate_events(candidate_id);
+            CREATE INDEX IF NOT EXISTS idx_candidate_events_type
+                ON candidate_events(event_type);
+
+            CREATE TABLE IF NOT EXISTS candidate_edit_history (
+                history_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id  INTEGER NOT NULL,
+                field_name    TEXT NOT NULL,
+                old_value     TEXT,
+                new_value     TEXT,
+                edited_at     TEXT,
+                FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id)
+                    ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_candidate_edit_history_candidate
+                ON candidate_edit_history(candidate_id);
+
             CREATE TABLE IF NOT EXISTS master_facilities (
                 facility_id    INTEGER PRIMARY KEY AUTOINCREMENT,
                 facility_name  TEXT NOT NULL,
@@ -504,6 +529,13 @@ def insert_candidate(data: dict) -> int:
         conn.commit()
         new_id = cur.lastrowid
         _update_batch_count(conn, batch_id)
+        conn.execute(
+            "INSERT INTO candidate_events (candidate_id, event_type, summary, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (new_id, "Candidate Created",
+             f"Candidate #{new_id} created (batch {batch_id}).", _now()),
+        )
+        conn.commit()
         return new_id
     finally:
         conn.close()
@@ -538,6 +570,16 @@ def update_candidate(candidate_id: int, data: dict) -> bool:
             )
             conn.commit()
             _update_batch_count(conn, current.get("batch_id") or 1)
+            # Safe edit history + timeline event (only when values actually changed).
+            changes = record_edit_history(candidate_id, current, data)
+            if changes:
+                conn.execute(
+                    "INSERT INTO candidate_events (candidate_id, event_type, summary, created_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (candidate_id, "Edited",
+                     f"Updated {changes} field(s).", _now()),
+                )
+                conn.commit()
         return True
     finally:
         conn.close()
@@ -753,6 +795,11 @@ def delete_candidate(candidate_id: int) -> bool:
         ).fetchone()
         if row is None:
             return False
+        # Remove dependent rows first (candidate edit history, events, documents)
+        # so the candidates foreign keys never block deletion.
+        conn.execute("DELETE FROM candidate_events WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM candidate_edit_history WHERE candidate_id = ?", (candidate_id,))
+        conn.execute("DELETE FROM documents WHERE candidate_id = ?", (candidate_id,))
         conn.execute("DELETE FROM candidates WHERE candidate_id = ?", (candidate_id,))
         conn.commit()
         _update_batch_count(conn, row["batch_id"])
@@ -795,6 +842,143 @@ def find_duplicate_aadhaar(aadhaar: str, exclude_id: Optional[int] = None) -> Op
         sql += " ORDER BY candidate_id ASC LIMIT 1"
         row = conn.execute(sql, params).fetchone()
         return _row_to_candidate(row) if row else None
+    finally:
+        conn.close()
+
+
+# ── Candidate timeline / audit ───────────────────────────────────────────────
+# A single lightweight event log per candidate. No historical fabrication —
+# events are written only by real application actions. Never stores full
+# Aadhaar / full address / credentials.
+
+
+def record_candidate_event(candidate_id: int, event_type: str,
+                           summary: str = "") -> int:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO candidate_events (candidate_id, event_type, summary, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (candidate_id, event_type, summary, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def list_candidate_events(candidate_id: int, limit: int = 200) -> list[dict]:
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM candidate_events WHERE candidate_id = ? "
+            "ORDER BY event_id DESC LIMIT ?",
+            (candidate_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ── Safe edit history ────────────────────────────────────────────────────────
+# Tracks safe old -> new values for ordinary fields. Sensitive fields
+# (Aadhaar number, address) are NEVER stored — callers instead log the
+# sanitised summary via record_candidate_event. The *_sensitive helpers below
+# exist so callers never accidentally persist raw sensitive values.
+
+
+SAFE_EDIT_FIELDS = {
+    "name", "mobile", "entity", "operation", "cost_code", "designation",
+    "facility", "facility_name", "location_code", "salary", "salary_display",
+    "status", "batch_id",
+}
+SENSITIVE_FIELD_LABELS = {"aadhaar_number": "Aadhaar", "address": "Address"}
+
+
+def record_edit_history(candidate_id: int, old_row: dict, new_row: dict) -> int:
+    """Record safe old -> new values for the safe edit fields.
+
+    Sensitive fields (Aadhaar number, full address) are skipped and their
+    values are never written to the history table. Returns the number of
+    change rows written.
+    """
+    written = 0
+    conn = _get_connection()
+    try:
+        for field in SAFE_EDIT_FIELDS:
+            if field not in new_row:
+                continue
+            old_v = old_row.get(field, "")
+            new_v = new_row.get(field, "")
+            if old_v == new_v:
+                continue
+            if field == "facility" and new_row.get("facility_name") == old_row.get("facility_name"):
+                # "facility" is an alias of facility_name; avoid duplicate rows.
+                continue
+            conn.execute(
+                "INSERT INTO candidate_edit_history "
+                "(candidate_id, field_name, old_value, new_value, edited_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (candidate_id, field, str(old_v), str(new_v), _now()),
+            )
+            written += 1
+        # Record sensitive-field change summaries WITHOUT the values.
+        for field, label in SENSITIVE_FIELD_LABELS.items():
+            if field not in new_row:
+                continue
+            old_v = str(old_row.get(field, "") or "").strip()
+            new_v = str(new_row.get(field, "") or "").strip()
+            if old_v != new_v and new_v:
+                conn.execute(
+                    "INSERT INTO candidate_edit_history "
+                    "(candidate_id, field_name, old_value, new_value, edited_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (candidate_id, field, label + " updated", label + " updated", _now()),
+                )
+                written += 1
+        if written:
+            conn.commit()
+        return written
+    finally:
+        conn.close()
+
+
+def list_edit_history(candidate_id: int, limit: int = 100) -> list[dict]:
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM candidate_edit_history WHERE candidate_id = ? "
+            "ORDER BY history_id DESC LIMIT ?",
+            (candidate_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ── Previous / next candidate navigation ─────────────────────────────────────
+
+
+def get_neighbor_candidates(candidate_id: int) -> dict:
+    """Return previous/next candidate ids in deterministic order (by id).
+
+    Used when a filtered-list order is not practical. Returns None for the
+    bound neighbours (no previous / no next).
+    """
+    conn = _get_connection()
+    try:
+        prev = conn.execute(
+            "SELECT candidate_id FROM candidates WHERE candidate_id < ? "
+            "ORDER BY candidate_id DESC LIMIT 1", (candidate_id,)
+        ).fetchone()
+        next = conn.execute(
+            "SELECT candidate_id FROM candidates WHERE candidate_id > ? "
+            "ORDER BY candidate_id ASC LIMIT 1", (candidate_id,)
+        ).fetchone()
+        return {
+            "prev_id": prev["candidate_id"] if prev else None,
+            "next_id": next["candidate_id"] if next else None,
+        }
     finally:
         conn.close()
 
@@ -1130,6 +1314,72 @@ def get_candidates_for_generated_file(generated_file_id: int) -> list[dict]:
             (generated_file_id,),
         ).fetchall()
         return [_row_to_candidate(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_portal_history_for_candidate(candidate_id: int, limit: int = 20) -> list[dict]:
+    """Safe portal activity for a candidate, via its generated file.
+
+    Only exposes non-sensitive portal bookkeeping fields; never credentials,
+    cookies, tokens, or passwords.
+    """
+    conn = _get_connection()
+    try:
+        file_id = conn.execute(
+            "SELECT generated_file_id FROM candidates WHERE candidate_id = ?",
+            (candidate_id,),
+        ).fetchone()
+        if not file_id or not file_id["generated_file_id"]:
+            return []
+        gid = file_id["generated_file_id"]
+        uploads = conn.execute(
+            "SELECT portal_upload_id, generated_file_id, batch_id, filename, "
+            "started_at, completed_at, portal_status, portal_reference, "
+            "result_file_path, error_file_path "
+            "FROM portal_uploads WHERE generated_file_id = ? "
+            "ORDER BY portal_upload_id DESC LIMIT ?",
+            (gid, limit),
+        ).fetchall()
+        live = conn.execute(
+            "SELECT live_upload_id, generated_file_id, candidate_id, "
+            "flow_status, started_at, submitted_at, portal_status, "
+            "portal_reference, success_count, failed_count, total_count, "
+            "creation_remarks "
+            "FROM live_uploads WHERE candidate_id = ? "
+            "ORDER BY live_upload_id DESC LIMIT ?",
+            (candidate_id, limit),
+        ).fetchall()
+        return {
+            "uploads": [dict(r) for r in uploads],
+            "live": [dict(r) for r in live],
+        }
+    finally:
+        conn.close()
+
+
+def get_generated_files_for_candidate(candidate_id: int, limit: int = 20) -> list[dict]:
+    """Generated files linked to a candidate (via generated_file_id) or its batch."""
+    conn = _get_connection()
+    try:
+        row = conn.execute(
+            "SELECT batch_id, generated_file_id FROM candidates WHERE candidate_id = ?",
+            (candidate_id,),
+        ).fetchone()
+        if not row:
+            return []
+        files = []
+        if row["generated_file_id"]:
+            files = conn.execute(
+                "SELECT * FROM generated_files WHERE file_id = ? "
+                "ORDER BY file_id DESC LIMIT 1", (row["generated_file_id"],),
+            ).fetchall()
+        if not files and row["batch_id"]:
+            files = conn.execute(
+                "SELECT * FROM generated_files WHERE batch_id = ? "
+                "ORDER BY file_id DESC LIMIT ?", (row["batch_id"], limit),
+            ).fetchall()
+        return [dict(r) for r in files]
     finally:
         conn.close()
 

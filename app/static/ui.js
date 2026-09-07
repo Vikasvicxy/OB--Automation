@@ -83,7 +83,7 @@
                 panel.innerHTML += "<div class='gs-group'>Candidates</div>";
                 results.candidates.forEach(function (c) {
                 panel.innerHTML +=
-                    "<a class='gs-item' href='/manual-entry?edit=" + c.candidate_id + "'>" +
+                    "<a class='gs-item' href='/candidates/" + c.candidate_id + "'>" +
                     "<span class='gs-primary'>" + escapeHtml(c.name || "") + "</span>" +
                     "<span class='gs-meta'>" + escapeHtml(c.status || "Draft") + " \u00B7 #" + c.candidate_id + "</span>" +
                     "<span class='gs-sub'>" + escapeHtml(c.designation || "") +
