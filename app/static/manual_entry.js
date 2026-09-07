@@ -1376,14 +1376,57 @@
         hideReview();
     }
 
-    /* ── localStorage Draft (single candidate) ───────────────────────────── */
+    /* ── Recovery Draft (server-side, non-sensitive) ────────────────────────
+       Parallel to localStorage. Persists only safe, non-sensitive form fields
+       to the server so an unfinished form can be recovered across sessions.
+       Aadhaar_number / address are NEVER stored by this draft layer.      */
+
     var DRAFT_KEY = "teamhr_draft";
+    var SERVER_DRAFT_ID = null;
+
+    function snapshotSafeFormData() {
+        if (typeof snapshotFormData === "function") return snapshotFormData();
+        return {};
+    }
 
     function saveLocalDraft() {
         var data = snapshotFormData();
         try {
             localStorage.setItem(DRAFT_KEY, JSON.stringify(data));
         } catch (e) { /* quota exceeded, ignore */ }
+    }
+
+    function saveServerDraft() {
+        var data = snapshotSafeFormData();
+        var hasData = data && (data.candidate_name || data.mobile || data.cost_code ||
+                               data.facility || data.salary);
+        if (!hasData) return;
+        var body = {
+            draft_type: "manual_entry",
+            safe_payload: data,
+            draft_id: SERVER_DRAFT_ID
+        };
+        fetch("/api/drafts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res && res.draft_id) SERVER_DRAFT_ID = res.draft_id;
+            })
+            .catch(function () { /* offline / non-fatal */ });
+    }
+
+    function clearServerDraft() {
+        if (!SERVER_DRAFT_ID) return;
+        var id = SERVER_DRAFT_ID;
+        SERVER_DRAFT_ID = null;
+        fetch("/api/drafts/discard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ draft_id: id })
+        }).catch(function () { /* ignore */ });
     }
 
     function loadLocalDraft() {
@@ -1398,6 +1441,7 @@
 
     function clearLocalDraft() {
         try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* ignore */ }
+        clearServerDraft();
     }
 
     function restoreDraft(data) {
@@ -1583,20 +1627,54 @@
         window.location.href = "/batch-review?batch_id=" + batchId;
     });
 
-    /* ── Recovery Banner ─────────────────────────────────────────────────── */
-    var draft = loadLocalDraft();
-    if (draft && (draft.mobile || draft.cost_code || draft.facility || draft.salary)) {
+    /* ── Recovery Banner (local + server-side draft) ─────────────────────── */
+    function hasMeaningfulDraft(d) {
+        return d && (d.mobile || d.cost_code || d.facility || d.salary || d.candidate_name);
+    }
+
+    var serverDraft = null;
+    function showRecoveryBanner() {
+        if (isEditMode) return; /* do not distract while editing a real candidate */
         recoveryBanner.style.display = "flex";
     }
 
+    fetch("/api/drafts?draft_type=manual_entry")
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data || !data.drafts || !data.drafts.length) return;
+            var latest = data.drafts[0];
+            if (!hasMeaningfulDraft(latest.safe_payload)) return;
+            serverDraft = latest;
+            SERVER_DRAFT_ID = latest.draft_id;
+            var local = loadLocalDraft();
+            var prefer = hasMeaningfulDraft(local) ? local : (latest.safe_payload || {});
+            if (hasMeaningfulDraft(prefer) && !isEditMode) showRecoveryBanner();
+        })
+        .catch(function () { /* server unavailable; rely on local draft below */ });
+
+    var draft = loadLocalDraft();
+    if (hasMeaningfulDraft(draft)) showRecoveryBanner();
+
     $("btnRecover").addEventListener("click", function () {
-        restoreDraft(draft);
+        var toRestore = hasMeaningfulDraft(loadLocalDraft())
+            ? loadLocalDraft()
+            : (serverDraft ? serverDraft.safe_payload : null);
+        if (toRestore) restoreDraft(toRestore);
         recoveryBanner.style.display = "none";
         showToast("Unsaved candidate recovered.", "info");
     });
 
     $("btnDiscard").addEventListener("click", function () {
         clearLocalDraft();
+        if (serverDraft && serverDraft.draft_id) {
+            fetch("/api/drafts/discard", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ draft_id: serverDraft.draft_id })
+            }).catch(function () { /* ignore */ });
+            serverDraft = null;
+            SERVER_DRAFT_ID = null;
+        }
         recoveryBanner.style.display = "none";
         showToast("Draft discarded.", "info");
     });
@@ -1638,7 +1716,10 @@
     var autoSaveTimer = null;
     function scheduleAutoSave() {
         if (autoSaveTimer) clearTimeout(autoSaveTimer);
-        autoSaveTimer = setTimeout(saveLocalDraft, 1000);
+        autoSaveTimer = setTimeout(function () {
+            saveLocalDraft();
+            saveServerDraft();
+        }, 1000);
     }
     mobileInput.addEventListener("input", scheduleAutoSave);
     salaryInput.addEventListener("input", scheduleAutoSave);

@@ -15,6 +15,8 @@ from app import master_data
 from app import database
 from app import generation
 from app import admin_master
+from app import backup_service
+from app import health as health_service
 from app.portal import service as portal_service
 from app.portal import live_upload
 
@@ -811,6 +813,7 @@ async def settings_page(request: Request):
             "portal_status": portal_service.portal_status(),
             "portal_uploads": database.list_portal_uploads(limit=20),
             "portal_audit": database.get_portal_audit(20),
+            "health_summary": health_service.summary(),
         },
     )
 
@@ -821,6 +824,158 @@ async def api_master_status():
         **master_data.get_master_status(),
         "history": database.get_master_load_history(20),
     })
+
+
+# ── Backups (create / verify / restore) ──────────────────────────────────────
+
+
+@app.get("/backups", response_class=HTMLResponse)
+async def backups_page(request: Request):
+    records = backup_service.list_backups()
+    audit = database.list_system_events(50)
+    audit_display = [
+        {"event_type": e["event_type"], "summary": e.get("summary", ""),
+         "created_at": e.get("created_at", "")} for e in audit
+        if e["event_type"].startswith(("Backup", "Restore", "Pre-Restore"))
+    ]
+    return templates.TemplateResponse(
+        "backups.html",
+        {
+            "request": request,
+            "backups": records,
+            "backup_dir": str(backup_service.backup_dir()),
+            "backup_audit": audit_display,
+            "nav_active": "backups",
+        },
+    )
+
+
+@app.post("/api/backups/create")
+async def api_backup_create(request: Request):
+    body = await request.json()
+    include_generated = bool(body.get("include_generated", False))
+    try:
+        result = backup_service.create_backup(include_generated=include_generated)
+    except Exception as e:  # pragma: no cover - defensive
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+    return JSONResponse(result)
+
+
+@app.post("/api/backups/verify")
+async def api_backup_verify(request: Request):
+    body = await request.json()
+    filename = (body.get("filename") or "").strip()
+    if not filename:
+        return JSONResponse({"ok": False, "error": "filename required"}, status_code=400)
+    result = backup_service.verify_backup_by_name(filename)
+    safe = {
+        "ok": result.get("ok"),
+        "valid": result.get("valid"),
+        "status": result.get("status"),
+        "error": result.get("error"),
+        "warnings": result.get("warnings", []),
+    }
+    m = result.get("manifest")
+    if m:
+        safe["manifest"] = {
+            "created_at": m.get("created_at"),
+            "git_commit": m.get("git_commit"),
+            "database_size": m.get("database_size"),
+            "include_generated_files": m.get("include_generated_files"),
+            "files": list(m.get("files", {}).keys()),
+        }
+    return JSONResponse(safe)
+
+
+@app.post("/api/backups/restore")
+async def api_backup_restore(request: Request):
+    body = await request.json()
+    filename = (body.get("filename") or "").strip()
+    if not filename:
+        return JSONResponse({"ok": False, "error": "filename required"}, status_code=400)
+    result = backup_service.restore_backup(filename)
+    return JSONResponse(result)
+
+
+@app.post("/api/backups/open-folder")
+async def api_backup_open_folder():
+    return JSONResponse(backup_service.open_backup_folder())
+
+
+# ── Health ───────────────────────────────────────────────────────────────────
+
+
+@app.get("/health", response_class=HTMLResponse)
+async def health_page(request: Request):
+    report = health_service.build_health_report()
+    return templates.TemplateResponse(
+        "health.html",
+        {
+            "request": request,
+            "cards": report["cards"],
+            "overall": report["overall"],
+            "nav_active": "health",
+        },
+    )
+
+
+@app.get("/api/health")
+async def api_health():
+    return JSONResponse(health_service.json_health())
+
+
+# ── Candidate drafts (Smart Upload / Manual Entry recovery) ─────────────────
+
+
+@app.post("/api/drafts")
+async def api_save_draft(request: Request):
+    """Save (create or update) a candidate draft. Only safe fields are stored."""
+    data = await request.json()
+    draft_type = (data.get("draft_type") or "manual_entry").strip()
+    if draft_type not in ("manual_entry", "smart_upload"):
+        draft_type = "manual_entry"
+    draft_id = data.get("draft_id")
+    payload = data.get("safe_payload") or {}
+    candidate_id = data.get("candidate_id")
+    if draft_id:
+        database.update_candidate_draft(int(draft_id), payload)
+        return JSONResponse({"ok": True, "draft_id": int(draft_id),
+                             "draft_type": draft_type})
+    new_id = database.save_candidate_draft(draft_type, payload, candidate_id)
+    return JSONResponse({"ok": True, "draft_id": new_id, "draft_type": draft_type})
+
+
+@app.get("/api/drafts")
+async def api_list_drafts(draft_type: str = ""):
+    drafts = database.list_candidate_drafts(
+        draft_type=draft_type if draft_type in ("manual_entry", "smart_upload")
+        else None, limit=10)
+    # Return latest per type for resume (never includes sensitive payload).
+    items = []
+    for d in drafts:
+        payload = d.get("safe_payload") or "{}"
+        try:
+            payload = json.loads(payload) if isinstance(payload, str) else payload
+        except (TypeError, ValueError):
+            payload = {}
+        items.append({
+            "draft_id": d["draft_id"],
+            "draft_type": d["draft_type"],
+            "candidate_id": d.get("candidate_id"),
+            "updated_at": d.get("updated_at"),
+            "safe_payload": payload,
+        })
+    return JSONResponse({"drafts": items})
+
+
+@app.post("/api/drafts/discard")
+async def api_discard_draft(request: Request):
+    body = await request.json()
+    draft_id = body.get("draft_id")
+    if not draft_id:
+        return JSONResponse({"ok": False, "error": "draft_id required"}, status_code=400)
+    database.record_system_event("Draft Discarded", "Recovery draft discarded.")
+    return JSONResponse({"ok": database.delete_candidate_draft(int(draft_id))})
 
 
 @app.post("/api/reload-masters")

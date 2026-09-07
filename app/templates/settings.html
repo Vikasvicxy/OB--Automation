@@ -58,7 +58,25 @@
             </p>
         </section>
 
-        {# ── 2. ADMIN MASTER LINK ─────────────────────────────────────── #}
+        {# ── 2. SYSTEM / BACKUP & RESTORE ────────────────────────────── #}
+        {% set hs = health_summary or {} %}
+        <section aria-label="System and backup">
+            <h3 class="section-heading">System</h3>
+            <div class="settings-grid">
+                <a href="/backups" class="settings-card">
+                    <div class="settings-card-title">Backup &amp; Restore</div>
+                    <div class="settings-card-status configured">Last: {{ hs.get('last_backup', 'None') }}</div>
+                    <p class="settings-card-desc">{{ hs.get('backup_count', 0) }} backups &middot; {{ hs.get('backup_folder_size', '') }} in folder</p>
+                </a>
+                <a href="/health" class="settings-card">
+                    <div class="settings-card-title">System Health</div>
+                    <div class="settings-card-status configured">Overall: {{ (hs.get('health_overall') or 'unknown') | upper }}</div>
+                    <p class="settings-card-desc">Drafts pending: {{ hs.get('draft_count', 0) }}</p>
+                </a>
+            </div>
+        </section>
+
+        {# ── 3. ADMIN MASTER LINK ─────────────────────────────────────── #}
         <section aria-label="Admin master links">
             <h3 class="section-heading">Admin Master Data</h3>
             <div class="settings-grid">

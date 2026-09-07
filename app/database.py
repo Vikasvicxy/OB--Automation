@@ -379,6 +379,25 @@ def init_db() -> None:
                 changed_at         TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_master_history_type ON master_change_history(master_type);
+
+            CREATE TABLE IF NOT EXISTS candidate_drafts (
+                draft_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                draft_type    TEXT NOT NULL DEFAULT 'manual_entry',
+                candidate_id  INTEGER,
+                safe_payload  TEXT NOT NULL DEFAULT '{}',
+                created_at    TEXT,
+                updated_at    TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_candidate_drafts_type
+                ON candidate_drafts(draft_type);
+
+            CREATE TABLE IF NOT EXISTS system_events (
+                event_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                summary    TEXT,
+                created_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_system_events_type ON system_events(event_type);
             """
         )
 
@@ -2008,6 +2027,168 @@ def list_master_changes(limit: int = 200) -> list[dict]:
         rows = conn.execute(
             "SELECT * FROM master_change_history ORDER BY change_id DESC LIMIT ?",
             (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ── Candidate drafts (recovery for unfinished forms) ─────────────────────────
+# Distinct from a confirmed candidate whose status is "draft". These records
+# hold recovery state for Smart Upload / Manual Entry forms that were never
+# confirmed. ONLY safe, non-sensitive form fields are persisted in
+# ``safe_payload`` (no Aadhaar number, no address, no raw OCR content).
+# Sensitive fields, when required for recovery, live in the ''candidates''
+# table as normal; drafts never store them.
+
+
+DRAFT_ALLOWED_KEYS = {
+    "candidate_name", "name", "mobile", "entity", "cost_code", "operation",
+    "team", "role", "designation", "facility_type", "facility", "facility_name",
+    "location_code", "salary", "salary_display", "aadhaar_filename",
+    "batch_id", "candidate_num", "candidateId", "draft_type",
+}
+
+
+def _sanitize_draft_payload(data: dict) -> str:
+    """Keep only non-sensitive keys; never persist Aadhaar/address/OCR."""
+    clean = {}
+    for k in DRAFT_ALLOWED_KEYS:
+        if k in data and data[k] is not None:
+            clean[k] = data[k]
+    return json.dumps(clean, ensure_ascii=False)
+
+
+def save_candidate_draft(draft_type: str, safe_payload: dict,
+                         candidate_id: Optional[int] = None) -> int:
+    """Insert a new candidate draft. Returns the new draft_id."""
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO candidate_drafts "
+            "(draft_type, candidate_id, safe_payload, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (draft_type, candidate_id, _sanitize_draft_payload(safe_payload),
+             _now(), _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def update_candidate_draft(draft_id: int, safe_payload: dict) -> bool:
+    """Update an existing draft's safe payload."""
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE candidate_drafts SET safe_payload = ?, updated_at = ? "
+            "WHERE draft_id = ?",
+            (_sanitize_draft_payload(safe_payload), _now(), draft_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def get_candidate_draft(draft_id: int) -> Optional[dict]:
+    conn = _get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM candidate_drafts WHERE draft_id = ?", (draft_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
+
+
+def list_candidate_drafts(draft_type: Optional[str] = None,
+                          limit: int = 20) -> list[dict]:
+    """Latest first. Only exposed through the draft endpoint / banner."""
+    conn = _get_connection()
+    try:
+        if draft_type:
+            rows = conn.execute(
+                "SELECT * FROM candidate_drafts WHERE draft_type = ? "
+                "ORDER BY updated_at DESC LIMIT ?", (draft_type, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM candidate_drafts ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def count_candidate_drafts() -> int:
+    conn = _get_connection()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM candidate_drafts").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def delete_candidate_draft(draft_id: int) -> bool:
+    """Delete only the draft record. Never touches candidates/documents/files."""
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "DELETE FROM candidate_drafts WHERE draft_id = ?", (draft_id,)
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def clear_candidate_drafts_for(draft_type: str, candidate_id: Optional[int] = None) -> int:
+    """Clear drafts associated with a candidate (e.g. after a successful save)."""
+    conn = _get_connection()
+    try:
+        if candidate_id is not None:
+            cur = conn.execute(
+                "DELETE FROM candidate_drafts WHERE draft_type = ? "
+                "AND (candidate_id = ? OR candidate_id IS NULL)",
+                (draft_type, candidate_id),
+            )
+        else:
+            cur = conn.execute(
+                "DELETE FROM candidate_drafts WHERE draft_type = ?", (draft_type,)
+            )
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
+# ── System audit events (backup / restore / health) ──────────────────────────
+# Minimal, safe audit trail. Never stores sensitive values.
+
+
+def record_system_event(event_type: str, summary: str = "") -> int:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO system_events (event_type, summary, created_at) "
+            "VALUES (?, ?, ?)",
+            (event_type, summary, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def list_system_events(limit: int = 100) -> list[dict]:
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM system_events ORDER BY event_id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
     finally:

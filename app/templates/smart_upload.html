@@ -7,6 +7,11 @@
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/ui.css">
     <link rel="stylesheet" href="/static/smart_upload.css">
+    <style>
+        .recovery-banner { display:flex; align-items:center; gap:12px; background:#fffbeb; border:1px solid #fde68a; border-radius:var(--radius); padding:12px 20px; margin-bottom:20px; }
+        .recovery-icon { font-size:1.2rem; color:var(--accent-amber); }
+        .recovery-text { font-weight:500; font-size:0.9rem; flex:1; }
+    </style>
 </head>
 <body>
     {% include 'partials/_sidebar.html' %}
@@ -19,6 +24,14 @@
                 <p class="page-subtitle">Upload screenshots/Aadhaar/PDF &mdash; extract candidate details for review</p>
             </div>
         </header>
+
+        <!-- ── Recovery Draft Banner ─────────────────────────────────────── -->
+        <div id="recoveryBanner" class="recovery-banner" style="display:none;margin-bottom:16px;">
+            <span class="recovery-icon" aria-hidden="true">&#9888;</span>
+            <span class="recovery-text">Unfinished candidate draft found. Would you like to resume it?</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnRecover">Resume</button>
+            <button type="button" class="btn btn-outline btn-sm" id="btnDiscard">Discard</button>
+        </div>
 
         <!-- ── Upload Zone ────────────────────────────────────────────────── -->
         <section id="uploadSection">
@@ -221,6 +234,123 @@
         var files = [];
         var extractionData = null;
         var currentSessionId = null;
+
+        /* ── Server-side recovery draft (non-sensitive fields only) ───────
+           Aadhaar_number / address are never stored by the draft layer.     */
+        var SERVER_DRAFT_ID = null;
+        var serverDraft = null;
+
+        function snapshotSafeReview() {
+            var d = extractionData || {};
+            var safe = {
+                name: document.getElementById("rfName").value.trim(),
+                mobile: document.getElementById("rfMobile").value.trim(),
+                facility: document.getElementById("rfFacility").value.trim(),
+                facility_name: document.getElementById("rfFacility").value.trim(),
+                role: document.getElementById("rfRole").value.trim(),
+                designation: document.getElementById("rfRole").value.trim(),
+                cost_code: document.getElementById("rfCostCode").value.trim(),
+                entity: (d.entity || document.getElementById("rfCostCode").getAttribute("data-entity") || ""),
+                operation: d.operation || "",
+                team: d.team || "",
+                facility_type: document.getElementById("rfFacilityType").value.trim(),
+                batch_id: d.batch_id || 1,
+                candidate_number: d.candidate_number || 1,
+                candidateNum: d.candidate_number || 1
+            };
+            var hasData = false;
+            for (var k in safe) { if (safe[k]) { hasData = true; break; } }
+            if (!hasData) return null;
+            safe.source_files = (d.source_files || []).map(function (f) { return f.filename; });
+            return safe;
+        }
+
+        function saveServerDraft() {
+            var safe = snapshotSafeReview();
+            if (!safe) return;
+            fetch("/api/drafts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    draft_type: "smart_upload",
+                    draft_id: SERVER_DRAFT_ID,
+                    safe_payload: safe
+                })
+            }).then(function (r) { return r.json(); })
+              .then(function (res) { if (res && res.draft_id) SERVER_DRAFT_ID = res.draft_id; })
+              .catch(function () { /* non-fatal */ });
+        }
+
+        function clearServerDraft() {
+            if (!SERVER_DRAFT_ID) return;
+            var id = SERVER_DRAFT_ID;
+            SERVER_DRAFT_ID = null;
+            fetch("/api/drafts/discard", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ draft_id: id })
+            }).catch(function () { /* ignore */ });
+        }
+
+        var draftSaveTimer = null;
+        function scheduleDraftSave() {
+            if (draftSaveTimer) clearTimeout(draftSaveTimer);
+            draftSaveTimer = setTimeout(saveServerDraft, 1500);
+        }
+
+        ["rfName", "rfMobile", "rfFacility", "rfRole", "rfSalary", "rfCostCode"].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) el.addEventListener("input", scheduleDraftSave);
+        });
+
+        fetch("/api/drafts?draft_type=smart_upload")
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data || !data.drafts || !data.drafts.length) return;
+                var latest = data.drafts[0];
+                var p = latest.safe_payload || {};
+                var meaningful = p.name || p.mobile || p.cost_code || p.facility || p.role;
+                if (!meaningful) return;
+                serverDraft = latest;
+                SERVER_DRAFT_ID = latest.draft_id;
+                document.getElementById("recoveryBanner").style.display = "flex";
+            })
+            .catch(function () { /* server unavailable */ });
+
+        document.getElementById("btnRecover").addEventListener("click", function () {
+            if (!serverDraft) { document.getElementById("recoveryBanner").style.display = "none"; return; }
+            var p = serverDraft.safe_payload || {};
+            var set = function (id, val) { if (val) document.getElementById(id).value = val; };
+            set("rfName", p.name); set("rfMobile", p.mobile); set("rfFacility", p.facility);
+            set("rfRole", p.role); set("rfCostCode", p.cost_code);
+            var d = extractionData || {};
+            d.entity = p.entity || d.entity || "";
+            d.operation = p.operation || d.operation || "";
+            d.team = p.team || d.team || "";
+            d.batch_id = p.batch_id || d.batch_id || 1;
+            d.candidate_number = p.candidate_number || d.candidate_number || 1;
+            if (p.facility_type) {
+                var ft = document.getElementById("rfFacilityType");
+                if (ft) ft.value = p.facility_type;
+            }
+            document.getElementById("reviewSection").style.display = "block";
+            document.getElementById("recoveryBanner").style.display = "none";
+            if (typeof showToast === "function") showToast("Unfinished draft resumed.", "info");
+        });
+
+        document.getElementById("btnDiscard").addEventListener("click", function () {
+            if (serverDraft && serverDraft.draft_id) {
+                fetch("/api/drafts/discard", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ draft_id: serverDraft.draft_id })
+                }).catch(function () { /* ignore */ });
+                serverDraft = null;
+                SERVER_DRAFT_ID = null;
+            }
+            document.getElementById("recoveryBanner").style.display = "none";
+            if (typeof showToast === "function") showToast("Draft discarded.", "info");
+        });
 
         /* ── Upload zone events ─────────────────────────────────────────── */
         uploadZone.addEventListener("click", function() { fileInput.click(); });
@@ -572,6 +702,7 @@
                 backToUpload();
                 files = [];
                 renderFileGrid();
+                clearServerDraft();
             })
             .catch(function(err) {
                 btn.disabled = false;

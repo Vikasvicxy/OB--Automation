@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup &amp; Restore - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+    <style>
+        .backup-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+        .restore-btn { color: var(--accent-red); border-color: var(--accent-red); }
+        .backup-audit-row { display:flex; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.85rem; }
+        .backup-audit-row .t { min-width:180px; font-weight:600; }
+        .backup-audit-row .d { flex:1; color: var(--text-secondary); }
+        .backup-audit-row .at { white-space:nowrap; color: var(--text-secondary); font-size:0.75rem; }
+        .confirm-shade { display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:999; align-items:center; justify-content:center; }
+        .confirm-shade.open { display:flex; }
+        .confirm-box { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:24px; max-width:480px; width:90%; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+        .confirm-box h3 { margin-top:0; }
+        .confirm-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+    </style>
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Backup &amp; Restore</div>
+                <h1 class="page-title">Backup &amp; Restore</h1>
+                <p class="page-subtitle">Create, verify and safely restore application state</p>
+            </div>
+            <div>
+                <a href="/health" class="btn btn-sm btn-outline">System Health</a>
+            </div>
+        </header>
+
+        <section aria-label="Create backup" class="settings-section">
+            <h3 class="settings-heading">Create Backup</h3>
+            <div class="backup-toolbar">
+                <label style="font-size:0.85rem;display:flex;align-items:center;gap:8px;">
+                    <input type="checkbox" id="includeGenerated" style="width:auto;">
+                    Include generated Excel files
+                </label>
+                <button id="btnCreateBackup" class="btn btn-primary">Create Backup</button>
+                <span id="createStatus" style="font-size:0.85rem;color:var(--text-secondary);"></span>
+            </div>
+            <p class="page-subtitle" style="font-size:0.8rem;">
+                Default backups contain the database + manifest (metadata only).
+                Generated Excel files are excluded by default. Raw documents, portal
+                sessions/cookies and secrets are never included.
+            </p>
+        </section>
+
+        <section aria-label="Existing backups" class="settings-section">
+            <h3 class="settings-heading">Existing Backups</h3>
+            {% if backups %}
+            <div class="table-container" style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Created</th>
+                            <th>Size</th>
+                            <th>Generated Files</th>
+                            <th>Verification</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in backups %}
+                        <tr data-filename="{{ b.filename }}">
+                            <td><strong>{{ b.filename }}</strong></td>
+                            <td>{{ b.created }}</td>
+                            <td>{{ b.human_size }}</td>
+                            <td>{{ 'Yes' if b.include_generated else 'No' }}</td>
+                            <td><span class="status-badge" data-verify-badge data-filename="{{ b.filename }}">Not verified</span></td>
+                            <td>
+                                <div class="action-cell">
+                                    <button class="btn btn-sm btn-outline" data-verify data-filename="{{ b.filename }}">Verify</button>
+                                    <button class="btn btn-sm btn-outline" data-open data-filename="{{ b.filename }}">Copy Path</button>
+                                    <button class="btn btn-sm btn-outline restore-btn" data-restore data-filename="{{ b.filename }}">Restore</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <p class="page-subtitle" style="font-size:0.8rem;margin-top:8px;">Backup folder: {{ backup_dir }}</p>
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128190;</span>No backups yet. Create your first backup above.</div>
+            {% endif %}
+        </section>
+
+        <section aria-label="Backup audit log" class="settings-section">
+            <h3 class="settings-heading">Backup / Restore Activity</h3>
+            {% if backup_audit %}
+                {% for ev in backup_audit %}
+                <div class="backup-audit-row">
+                    <span class="t">{{ ev.event_type }}</span>
+                    <span class="d">{{ ev.summary }}</span>
+                    <span class="at">{{ ev.created_at }}</span>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="ui-empty"><span class="empty-ic">&#128220;</span>No backup activity yet</div>
+            {% endif %}
+        </section>
+    </main>
+
+    <div class="confirm-shade" id="restoreShade">
+        <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="restoreTitle">
+            <h3 id="restoreTitle">Confirm Restore</h3>
+            <p id="restoreMsg"></p>
+            <div class="confirm-actions">
+                <button class="btn btn-sm btn-outline" id="btnRestoreCancel">Cancel</button>
+                <button class="btn btn-sm restore-btn" id="btnRestoreConfirm">Restore Now</button>
+            </div>
+        </div>
+    </div>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            function fmtDate(ts) {
+                var d = new Date(ts * 1000);
+                return d.toISOString().replace('T', ' ').slice(0, 19);
+            }
+
+            document.getElementById('btnCreateBackup').addEventListener('click', function () {
+                var btn = this;
+                var status = document.getElementById('createStatus');
+                btn.disabled = true;
+                status.textContent = 'Creating backup...';
+                var includeGenerated = document.getElementById('includeGenerated').checked;
+                fetch('/api/backups/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ include_generated: includeGenerated })
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (d.ok) {
+                            status.textContent = 'Created: ' + d.filename + ' (' + d.human_size + ')';
+                            if (typeof showToast === 'function') showToast('success', 'Backup created successfully.');
+                            setTimeout(function () { window.location.reload(); }, 700);
+                        } else {
+                            status.textContent = 'Error: ' + (d.error || 'unknown');
+                            if (typeof showToast === 'function') showToast('error', 'Backup failed: ' + (d.error || 'unknown'));
+                        }
+                        btn.disabled = false;
+                    })
+                    .catch(function () {
+                        status.textContent = 'Request failed.';
+                        btn.disabled = false;
+                    });
+            });
+
+            document.querySelectorAll('[data-verify]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var filename = btn.getAttribute('data-filename');
+                    fetch('/api/backups/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ filename: filename })
+                    })
+                        .then(function (r) { return r.json(); })
+                        .then(function (d) {
+                            var badge = document.querySelector('[data-verify-badge][data-filename="' + filename + '"]');
+                            if (d.valid) {
+                                if (badge) { badge.textContent = 'Valid'; badge.className = 'status-badge status-ready'; }
+                                if (typeof showToast === 'function') showToast('success', 'Backup is valid.');
+                            } else {
+                                if (badge) { badge.textContent = 'Invalid'; badge.className = 'status-badge status-fail'; }
+                                if (typeof showToast === 'function') showToast('error', 'Backup invalid: ' + (d.error || ''));
+                            }
+                        })
+                        .catch(function () {
+                            if (typeof showToast === 'function') showToast('error', 'Verification request failed.');
+                        });
+                });
+            });
+
+            document.querySelectorAll('[data-open]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var msg = "Backup folder: {{ backup_dir }}";
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText("{{ backup_dir }}").then(function () {
+                            if (typeof showToast === 'function') showToast('info', 'Path copied to clipboard.');
+                        });
+                    }
+                    if (typeof showToast === 'function' && !msg) {}
+                });
+            });
+
+            var pendingRestore = null;
+            document.querySelectorAll('[data-restore]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    pendingRestore = btn.getAttribute('data-filename');
+                    document.getElementById('restoreMsg').textContent =
+                        'Restoring "' + pendingRestore + '" will REPLACE the current database. ' +
+                        'A pre-restore backup will be created automatically before the switch. Continue?';
+                    document.getElementById('restoreShade').classList.add('open');
+                });
+            });
+
+            document.getElementById('btnRestoreCancel').addEventListener('click', function () {
+                document.getElementById('restoreShade').classList.remove('open');
+                pendingRestore = null;
+            });
+
+            document.getElementById('btnRestoreConfirm').addEventListener('click', function () {
+                var filename = pendingRestore;
+                document.getElementById('restoreShade').classList.remove('open');
+                pendingRestore = null;
+                if (!filename) return;
+                var msg = document.createElement('div');
+                var statusEl = document.querySelector('#btnCreateBackup + span');
+                var btn = document.getElementById('btnCreateBackup');
+                if (btn) { btn.disabled = true; }
+                fetch('/api/backups/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: filename })
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (d) {
+                        if (d.ok) {
+                            if (typeof showToast === 'function') showToast('success', 'Restore completed.');
+                            setTimeout(function () { window.location.href = '/health'; }, 900);
+                        } else {
+                            if (typeof showToast === 'function') showToast('error', 'Restore blocked/failed: ' + (d.error || d.stage || '') + ' (stage ' + (d.stage || '?') + ')');
+                        }
+                        if (btn) btn.disabled = false;
+                    })
+                    .catch(function () {
+                        if (typeof showToast === 'function') showToast('error', 'Restore request failed.');
+                        if (btn) btn.disabled = false;
+                    });
+            });
+        })();
+    </script>
+</body>
+</html>
