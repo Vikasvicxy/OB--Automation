@@ -436,6 +436,223 @@ async def api_generated_file_result(file_id: int):
     return FileResponse(str(full), filename=Path(full).name)
 
 
+# ── Batch Detail (read-first page) ───────────────────────────────────────────
+
+
+@app.get("/batches/{batch_id}", response_class=HTMLResponse)
+async def batch_detail_page(request: Request, batch_id: int):
+    batch = database.get_batch(batch_id)
+    if batch is None:
+        return templates.TemplateResponse(
+            "404.html",
+            {"request": request, "message": "Batch not found."},
+            status_code=404,
+        )
+    summary = database.get_batch_summary(batch_id)
+    candidates = database.get_batch_candidates(batch_id)
+    generated_files = database.get_generated_files_with_portal(batch_id)
+    events = database.list_batch_events(batch_id)
+    portal = database.list_portal_uploads(batch_id)
+
+    # "Excluded / Needs Review" = candidates flagged needs review/attention.
+    review = [c for c in candidates
+              if (c.get("status") or "").lower() in
+              ("needs_attention", "needs_review")]
+    ready_rows = [c for c in candidates
+                  if (c.get("status") or "").lower() == "ready"]
+
+    return templates.TemplateResponse(
+        "batch_detail.html",
+        {
+            "request": request,
+            "batch_id": batch_id,
+            "batch": batch,
+            "summary": summary,
+            "candidates": candidates,
+            "ready_candidates": ready_rows,
+            "review_candidates": review,
+            "generated_files": generated_files,
+            "events": events,
+            "portal": portal,
+            "nav_active": "batches",
+        },
+    )
+
+
+# ── Candidate Pipeline / Kanban (read-only) ──────────────────────────────────
+# Uses REAL candidate status + portal status. Never drags cards into
+# portal-derived states; this phase is read-only for safety.
+
+
+PIPELINE_COLUMNS = [
+    "draft", "needs_review", "ready", "generated",
+    "portal_pending", "portal_success", "portal_failed",
+]
+
+
+def _pipeline_bucket(candidate: dict) -> str:
+    """Map a candidate into ONE pipeline column using status + portal status.
+
+    Portal success/failed are derived from the system portal_status and are
+    NOT user-movable. Never silently discards a candidate: unmappable statuses
+    fall through to an explicit 'Other/Review' column so nothing is lost.
+    """
+    status = (candidate.get("status") or "").lower().strip()
+    portal = (candidate.get("portal_status") or "").lower().strip()
+
+    if portal in ("success",):
+        return "portal_success"
+    if portal == "failed":
+        return "portal_failed"
+    if portal in ("processing", "portal uploaded", "link generated", "pending"):
+        return "portal_pending"
+
+    if status in ("needs_attention", "needs_review"):
+        return "needs_review"
+    if status == "ready":
+        return "ready"
+    if status == "generated":
+        return "generated"
+    if status == "draft":
+        return "draft"
+    # Unmappable -> explicit other bucket (never discarded).
+    return "other"
+
+
+def _pipeline_safe(candidate: dict) -> dict:
+    """Safe compact card payload (no Aadhaar/address)."""
+    return {
+        "candidate_id": candidate.get("candidate_id"),
+        "name": candidate.get("name") or "",
+        "mobile": candidate.get("mobile") or "",
+        "role": candidate.get("designation") or "",
+        "facility": candidate.get("facility_name") or "",
+        "batch_id": candidate.get("batch_id"),
+        "status": candidate.get("status") or "",
+        "cost_code": candidate.get("cost_code") or "",
+        "attention": (candidate.get("status") or "").lower() in
+                     ("needs_attention", "needs_review"),
+    }
+
+
+def _build_pipeline(candidates: list[dict]) -> tuple[dict, list[str]]:
+    """Return dict of column -> list[safe cards] and the ordered column names.
+
+    Includes an 'other' column only when there are unmappable candidates so we
+    never silently drop anyone.
+    """
+    columns = {c: [] for c in PIPELINE_COLUMNS}
+    columns["other"] = []
+    for c in candidates:
+        bucket = _pipeline_bucket(c)
+        columns.setdefault(bucket, []).append(_pipeline_safe(c))
+    order = [c for c in PIPELINE_COLUMNS if columns[c]]
+    if columns.get("other"):
+        order.append("other")
+    return columns, order
+
+
+def filter_pipeline_candidates(
+    candidates: list[dict],
+    search: str = "",
+    today: bool = False,
+    entity: str = "",
+    operation: str = "",
+    cost_code: str = "",
+    role: str = "",
+    facility: str = "",
+    batch_id: Optional[str] = "",
+    status: str = "",
+) -> list[dict]:
+    """Apply pipeline filters (name/mobile search + entity/operation/etc.).
+
+    NEVER searches Aadhaar or address.
+    """
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    results = []
+    for c in candidates:
+        if today and (c.get("created_date") or "") != today_str:
+            continue
+        if entity and (c.get("entity") or "").strip().lower() != entity.strip().lower():
+            continue
+        if operation and (c.get("operation") or "").strip().lower() != operation.strip().lower():
+            continue
+        if cost_code and (c.get("cost_code") or "").strip() != cost_code.strip():
+            continue
+        if role and (c.get("designation") or "").strip().lower() != role.strip().lower():
+            continue
+        if facility and (c.get("facility_name") or "").strip().lower() != facility.strip().lower():
+            continue
+        if batch_id and str(c.get("batch_id") or "").strip() != str(batch_id).strip():
+            continue
+        if status and _pipeline_bucket(c) != status and status != "all":
+            continue
+        if search:
+            q = search.lower()
+            name = (c.get("name") or "").lower()
+            mobile = (c.get("mobile") or "").lower()
+            if q not in name and q not in mobile:
+                continue
+        results.append(c)
+    return results
+
+
+@app.get("/pipeline", response_class=HTMLResponse)
+async def pipeline_page(request: Request, search: str = "", today: bool = False,
+                        entity: str = "", operation: str = "", cost_code: str = "",
+                        role: str = "", facility: str = "", batch_id: str = "",
+                        status: str = ""):
+    all_candidates = database.list_candidates()
+    filtered = filter_pipeline_candidates(
+        all_candidates, search=search, today=today, entity=entity,
+        operation=operation, cost_code=cost_code, role=role, facility=facility,
+        batch_id=batch_id, status=status,
+    )
+    columns, order = _build_pipeline(filtered)
+    total = len(all_candidates)
+    filtered_count = len(filtered)
+
+    # Distinct values for the filter dropdowns (safe fields only).
+    entities = sorted({(c.get("entity") or "").strip() for c in all_candidates
+                       if (c.get("entity") or "").strip()})
+    operations = sorted({(c.get("operation") or "").strip() for c in all_candidates
+                         if (c.get("operation") or "").strip()})
+    cost_codes = sorted({(c.get("cost_code") or "").strip() for c in all_candidates
+                         if (c.get("cost_code") or "").strip()})
+    roles = sorted({(c.get("designation") or "").strip() for c in all_candidates
+                    if (c.get("designation") or "").strip()})
+    facilities = sorted({(c.get("facility_name") or "").strip() for c in all_candidates
+                         if (c.get("facility_name") or "").strip()})
+    batches = sorted({c.get("batch_id") for c in all_candidates
+                      if c.get("batch_id") is not None})
+
+    return templates.TemplateResponse(
+        "pipeline.html",
+        {
+            "request": request,
+            "columns": columns,
+            "column_order": order,
+            "total": total,
+            "filtered_count": filtered_count,
+            "filters": {
+                "search": search, "today": today, "entity": entity,
+                "operation": operation, "cost_code": cost_code, "role": role,
+                "facility": facility, "batch_id": batch_id, "status": status,
+            },
+            "entities": entities, "operations": operations,
+            "cost_codes": cost_codes, "roles": roles, "facilities": facilities,
+            "batches": batches,
+            "column_labels": {
+                "draft": "Draft", "needs_review": "Needs Review", "ready": "Ready",
+                "generated": "Generated", "portal_pending": "Portal Pending",
+                "portal_success": "Portal Success", "portal_failed": "Portal Failed",
+                "other": "Other / Review",
+            },
+            "nav_active": "pipeline",
+        },
+    )
+
+
 @app.get("/api/search")
 async def api_search(q: str = ""):
     """Global search. Uses parameterized SQL against safe fields only.

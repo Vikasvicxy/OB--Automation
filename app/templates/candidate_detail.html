@@ -96,7 +96,11 @@
                 <div class="cd-field"><div class="cd-label">Salary</div><div class="cd-value">{{ candidate.salary_display or candidate.salary or '—' }}</div></div>
                 <div class="cd-field"><div class="cd-label">Migrant</div><div class="cd-value">{{ candidate.migrant or 'No' }}</div></div>
                 <div class="cd-field"><div class="cd-label">Status</div><div class="cd-value">{{ candidate.status or '—' }}</div></div>
-                <div class="cd-field"><div class="cd-label">Batch</div><div class="cd-value">{{ candidate.batch_id or '—' }}</div></div>
+                <div class="cd-field"><div class="cd-label">Batch</div><div class="cd-value">
+                    {% if candidate.batch_id %}
+                    <a href="/batches/{{ candidate.batch_id }}">BATCH-{{ "%04d" | format(candidate.batch_id) }}</a>
+                    {% else %}Not assigned to batch{% endif %}
+                </div></div>
                 <div class="cd-field"><div class="cd-label">Created</div><div class="cd-value">{{ candidate.created_date or '—' }} {{ candidate.created_time or '' }}</div></div>
                 <div class="cd-field"><div class="cd-label">Updated</div><div class="cd-value">{{ candidate.updated_at or '—' }}</div></div>
                 <div class="cd-field"><div class="cd-label">Portal Status</div><div class="cd-value">{{ candidate.portal_status or '—' }}</div></div>

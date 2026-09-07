@@ -307,6 +307,16 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_candidate_edit_history_candidate
                 ON candidate_edit_history(candidate_id);
 
+            CREATE TABLE IF NOT EXISTS batch_events (
+                event_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id      INTEGER NOT NULL,
+                event_type    TEXT NOT NULL,
+                summary       TEXT,
+                created_at    TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_batch_events_batch
+                ON batch_events(batch_id);
+
             CREATE TABLE IF NOT EXISTS master_facilities (
                 facility_id    INTEGER PRIMARY KEY AUTOINCREMENT,
                 facility_name  TEXT NOT NULL,
@@ -485,6 +495,92 @@ def update_batch_status(batch_id: int, status: str) -> bool:
         conn.close()
 
 
+# ── Batch detail / summary / timeline ────────────────────────────────────────
+
+
+def get_batch_summary(batch_id: int) -> Optional[dict]:
+    """Aggregate read-only metrics for one batch (safe fields only)."""
+    batch = get_batch(batch_id)
+    if batch is None:
+        return None
+    candidates = list_candidates(batch_id=batch_id)
+    ready = sum(1 for c in candidates if (c.get("status") or "").lower() == "ready")
+    needs_review = sum(
+        1 for c in candidates if (c.get("status") or "").lower() in
+        ("needs_attention", "needs_review")
+    )
+    generated_files = list_generated_files(batch_id)
+
+    portal_files = [f for f in generated_files
+                    if (f.get("portal_status") or "").lower() == "success"]
+    portal_status = "Success" if portal_files else \
+        ("Processing" if any((f.get("portal_status") or "").lower() in
+                             ("processing", "pending", "portal uploaded")
+                             for f in generated_files) else ("Failed" if any(
+            (f.get("portal_status") or "").lower() == "failed"
+            for f in generated_files) else ("Not Started" if generated_files else None)))
+
+    return {
+        "batch_id": batch_id,
+        "created_at": batch.get("created_at"),
+        "status": batch.get("status"),
+        "candidate_count": len(candidates),
+        "ready_count": ready,
+        "needs_review_count": needs_review,
+        "generated_file_count": len(generated_files),
+        "portal_status": portal_status,
+    }
+
+
+def record_batch_event(batch_id: int, event_type: str, summary: str = "") -> int:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO batch_events (batch_id, event_type, summary, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (batch_id, event_type, summary, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def list_batch_events(batch_id: int, limit: int = 200) -> list[dict]:
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM batch_events WHERE batch_id = ? "
+            "ORDER BY event_id DESC LIMIT ?",
+            (batch_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_generated_files_with_portal(batch_id: int, limit: int = 50) -> list[dict]:
+    """Generated files for a batch joined with portal upload info (safe only)."""
+    files = list_generated_files(batch_id, limit=limit)
+    conn = _get_connection()
+    try:
+        out = []
+        for f in files:
+            row = dict(f)
+            upload = conn.execute(
+                "SELECT portal_upload_id, portal_status, portal_reference, "
+                "started_at, completed_at, result_file_path, error_file_path "
+                "FROM portal_uploads WHERE generated_file_id = ? "
+                "ORDER BY portal_upload_id DESC LIMIT 1",
+                (f["file_id"],),
+            ).fetchone()
+            row["portal_upload"] = dict(upload) if upload else None
+            out.append(row)
+        return out
+    finally:
+        conn.close()
+
+
 # ── Candidates ───────────────────────────────────────────────────────────────
 
 
@@ -536,6 +632,8 @@ def insert_candidate(data: dict) -> int:
              f"Candidate #{new_id} created (batch {batch_id}).", _now()),
         )
         conn.commit()
+        record_batch_event(batch_id, "Candidate Added",
+                           f"Candidate #{new_id} added to batch.")
         return new_id
     finally:
         conn.close()
@@ -803,6 +901,8 @@ def delete_candidate(candidate_id: int) -> bool:
         conn.execute("DELETE FROM candidates WHERE candidate_id = ?", (candidate_id,))
         conn.commit()
         _update_batch_count(conn, row["batch_id"])
+        record_batch_event(row["batch_id"], "Candidate Removed",
+                           f"Candidate #{candidate_id} removed from batch.")
         return True
     finally:
         conn.close()
@@ -1144,7 +1244,10 @@ def create_generated_file(
              generation_status, portal_result_path, portal_failure_path),
         )
         conn.commit()
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        record_batch_event(batch_id, "Excel Generated",
+                           f"Onboarding file '{filename}' generated.")
+        return new_id
     finally:
         conn.close()
 
@@ -1400,7 +1503,10 @@ def create_portal_upload(generated_file_id: int, batch_id: int, filename: str,
              "", "", "", "", ""),
         )
         conn.commit()
-        return cur.lastrowid
+        new_id = cur.lastrowid
+        record_batch_event(batch_id, "Portal Submitted",
+                           f"Portal upload started for '{filename}'.")
+        return new_id
     finally:
         conn.close()
 
@@ -1446,6 +1552,19 @@ def update_portal_upload(portal_upload_id: int, **fields) -> bool:
             [*sets.values(), portal_upload_id],
         )
         conn.commit()
+        if "portal_status" in sets:
+            up = conn.execute(
+                "SELECT b.batch_id, b.filename FROM portal_uploads b "
+                "WHERE b.portal_upload_id = ?", (portal_upload_id,)
+            ).fetchone()
+            if up:
+                bstatus = str(sets["portal_status"] or "").lower()
+                if bstatus == "success":
+                    record_batch_event(up["batch_id"], "Portal Completed",
+                                       f"Portal upload succeeded for '{up['filename']}'.")
+                elif bstatus == "failed":
+                    record_batch_event(up["batch_id"], "Portal Failed",
+                                       f"Portal upload failed for '{up['filename']}'.")
         return True
     finally:
         conn.close()

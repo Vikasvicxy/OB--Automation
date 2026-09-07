@@ -27,7 +27,10 @@
             <div>
                 <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Batch Review</div>
                 <h1 class="page-title">Batch Review</h1>
-                <p class="page-subtitle">Viewing batch {{ batch_id }} &mdash; {{ counts.total }} candidate(s)</p>
+                <p class="page-subtitle">
+                    Viewing <a href="/batches/{{ batch_id }}">BATCH-{{ "%04d" | format(batch_id) }}</a>
+                    &mdash; {{ counts.total }} candidate(s)
+                </p>
             </div>
         </header>
 
@@ -37,6 +40,7 @@
             <input id="batchNavInput" type="number" min="1" value="{{ batch_id }}">
             <a href="#" id="batchGo" class="btn btn-primary btn-sm">Go</a>
             <a href="/batch-review?batch_id={{ batch_id + 1 }}" class="btn btn-outline btn-sm">Next &rarr;</a>
+            <a href="/batches/{{ batch_id }}" class="btn btn-outline btn-sm">Batch Detail &rarr;</a>
         </div>
 
         <section aria-label="Batch summary">

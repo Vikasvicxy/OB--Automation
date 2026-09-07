@@ -43,6 +43,7 @@
                     <button class="filter-btn" data-status="generated">Generated</button>
                 </div>
                 <span class="candidates-count" id="candidatesCount">Showing {{ candidates | length }} candidates</span>
+                <a href="/pipeline" class="btn btn-sm btn-outline" style="margin-left:auto">Pipeline View &rarr;</a>
             </div>
 
             <table class="data-table">
@@ -68,7 +69,7 @@
                         <td><a href="/candidates/{{ c.candidate_id }}" class="link">{{ c.name or '' }}</a></td>
                         <td>{{ c.mobile or '' }}</td>
                         <td><span class="status-badge status-{{ (c.status or 'draft') | lower | replace(' ', '-') }}">{{ c.status or 'Draft' }}</span></td>
-                        <td>{{ c.batch_id or '' }}</td>
+                        <td>{% if c.batch_id %}<a href="/batches/{{ c.batch_id }}">BATCH-{{ "%04d" | format(c.batch_id) }}</a>{% else %}—{% endif %}</td>
                         <td>{{ c.entity or '' }}{% if c.cost_code %} / {{ c.cost_code }}{% endif %}</td>
                         <td>{{ c.operation or '' }}</td>
                         <td>{{ c.facility_name or '' }}</td>
@@ -115,7 +116,7 @@
                     "<td><a href=\"/candidates/" + c.candidate_id + "\" class=\"link\">" + escapeHtml(c.name || "") + "</a></td>" +
                     "<td>" + escapeHtml(c.mobile || "") + "</td>" +
                     "<td><span class=\"status-badge status-" + escapeHtml(status.replace(/ /g, "-")) + "\">" + escapeHtml(c.status || "Draft") + "</span></td>" +
-                    "<td>" + c.batch_id + "</td>" +
+                    "<td>" + (c.batch_id ? "<a href='/batches/" + c.batch_id + "'>BATCH-" + ("0000" + c.batch_id).slice(-4) + "</a>" : "") + "</td>" +
                     "<td>" + entityCost + "</td>" +
                     "<td>" + escapeHtml(c.operation || "") + "</td>" +
                     "<td>" + escapeHtml(c.facility_name || "") + "</td>" +

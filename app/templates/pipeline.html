@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candidate Pipeline - TeamHR</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <style>
+        .pipeline-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+        .pipeline-toolbar select,.pipeline-toolbar input{padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82rem;background:var(--bg-card);color:var(--text-primary)}
+        .pipeline-board{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;min-height:60vh}
+        .pipeline-column{flex:0 0 260px;min-width:260px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;flex-direction:column;max-height:78vh}
+        .pipeline-column-head{padding:10px 12px;border-bottom:1px solid var(--border);font-weight:600;font-size:0.85rem;display:flex;justify-content:space-between;align-items:center}
+        .pipeline-column-count{background:var(--bg-elevated, #eef2f7);border-radius:20px;padding:2px 10px;font-size:0.78rem;color:var(--text-secondary)}
+        .pipeline-card-list{overflow-y:auto;padding:8px;flex:1;display:flex;flex-direction:column;gap:8px}
+        .pipeline-other{background:var(--bg-card)}
+        .pipeline-card{display:block;background:var(--bg-elevated,#fff);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;text-decoration:none;color:inherit;transition:border-color var(--transition)}
+        .pipeline-card:hover{border-color:var(--accent-blue)}
+        .pipeline-card.attention{border-left:3px solid var(--danger,#b3261e)}
+        .pipeline-card .pc-name{font-weight:600;font-size:0.88rem;margin-bottom:4px}
+        .pipeline-card .pc-meta{font-size:0.75rem;color:var(--text-secondary);line-height:1.5}
+        .pipeline-card .pc-status{display:inline-block;margin-top:4px;font-size:0.7rem}
+        .empty-note{font-size:0.85rem;color:var(--text-secondary);font-style:italic}
+        .pipeline-summary{margin-bottom:12px;color:var(--text-secondary);font-size:0.85rem}
+        .filter-act{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:5px 14px;font-size:0.82rem;color:var(--text-secondary);cursor:pointer;text-decoration:none}
+        .filter-act:hover{color:var(--accent-blue);border-color:var(--accent-blue)}
+    </style>
+</head>
+<body>
+    {% set nav_active = 'candidates' %}
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Pipeline</div>
+                <h1 class="page-title">Candidate Pipeline</h1>
+                <p class="page-subtitle">Kanban view of candidates by stage (read-only)</p>
+            </div>
+        </header>
+
+        <p class="pipeline-summary">
+            Showing {{ filtered_count }} of {{ total }} candidates.
+            {% if not column_order %}<span class="empty-note">No candidates match the current filters.</span>{% endif %}
+        </p>
+
+        <form method="get" action="/pipeline" class="pipeline-toolbar">
+            <input type="search" name="search" value="{{ filters.search }}" placeholder="Search by name or mobile" aria-label="Search candidates by name or mobile">
+            <label class="filter-check"><input type="checkbox" name="today" value="1" {% if filters.today %}checked{% endif %}> Today</label>
+            <select name="entity" aria-label="Entity"><option value="">Entity: All</option>{% for e in entities %}<option value="{{ e }}" {% if filters.entity == e %}selected{% endif %}>{{ e }}</option>{% endfor %}</select>
+            <select name="operation" aria-label="Operation"><option value="">Operation: All</option>{% for o in operations %}<option value="{{ o }}" {% if filters.operation == o %}selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+            <select name="cost_code" aria-label="Cost Code"><option value="">Cost Code: All</option>{% for cc in cost_codes %}<option value="{{ cc }}" {% if filters.cost_code == cc %}selected{% endif %}>{{ cc }}</option>{% endfor %}</select>
+            <select name="role" aria-label="Role"><option value="">Role: All</option>{% for r in roles %}<option value="{{ r }}" {% if filters.role == r %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+            <select name="facility" aria-label="Facility"><option value="">Facility: All</option>{% for f in facilities %}<option value="{{ f }}" {% if filters.facility == f %}selected{% endif %}>{{ f }}</option>{% endfor %}</select>
+            <select name="batch_id" aria-label="Batch"><option value="">Batch: All</option>{% for b in batches %}<option value="{{ b }}" {% if filters.batch_id == b|string %}selected{% endif %}>BATCH-{{ "%04d" | format(b) }}</option>{% endfor %}</select>
+            <select name="status" aria-label="Status"><option value="all">Status: All</option>{% for key,label in column_labels.items() %}<option value="{{ key }}" {% if filters.status == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <button type="submit" class="filter-act">Apply</button>
+            <a href="/pipeline" class="filter-act">Clear</a>
+        </form>
+
+        <div class="pipeline-board" role="list" aria-label="Candidate pipeline board">
+            {% for key in column_order %}
+            {% set count = (columns.get(key) or []) | length %}
+            <div class="pipeline-column {% if key == 'other' %}pipeline-other{% endif %}" data-column="{{ key }}">
+                <div class="pipeline-column-head">
+                    <span>{{ column_labels.get(key, key | title) }} ({{ count }})</span>
+                    <span class="pipeline-column-count">{{ count }}</span>
+                </div>
+                <div class="pipeline-card-list">
+                    {% for card in columns[key] %}
+                    <a class="pipeline-card {% if card.attention %}attention{% endif %}" href="/candidates/{{ card.candidate_id }}">
+                        <div class="pc-name">{{ card.name or '—' }}</div>
+                        <div class="pc-meta">
+                            {% if card.mobile %}{{ card.mobile }}{% endif %}
+                            {% if card.role %}<br>{{ card.role }}{% endif %}
+                            {% if card.facility %}<br>{{ card.facility }}{% endif %}
+                            {% if card.batch_id is not none %}<br>BATCH-{{ "%04d" | format(card.batch_id) }}{% endif %}
+                        </div>
+                        <span class="pc-status status-badge status-{{ (card.status or 'draft') | lower | replace(' ', '-') }}">{{ card.status or 'Draft' }}</span>
+                    </a>
+                    {% else %}
+                    <p class="empty-note">No candidates in this pipeline column</p>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+</body>
+</html>

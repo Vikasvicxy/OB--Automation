@@ -88,6 +88,10 @@
                     <div class="kpi-count">{{ stats.batches_today }}</div>
                     <div class="kpi-label">Today's Batches</div>
                 </a>
+                <a href="/pipeline" class="kpi-card kpi-card-sm">
+                    <div class="kpi-count">{{ stats.total or 0 }}</div>
+                    <div class="kpi-label">Pipeline Candidates</div>
+                </a>
                 <a href="/data-quality" class="kpi-card kpi-card-sm">
                     <div class="kpi-count kpi-tone-fail">{{ stats.duplicate_warnings }}</div>
                     <div class="kpi-label">Duplicate Warnings</div>
