@@ -423,7 +423,15 @@ def generate_batch_excel(batch_id: int, only_ready: bool = True) -> dict:
                 "excluded": excluded, "candidate_count": 0}
 
     # Output folders + filename.
-    folders = build_date_folders(now)
+    try:
+        folders = build_date_folders(now)
+    except Exception as e:  # noqa: BLE001
+        return {
+            "success": False,
+            "error": f"Could not create output folders: {e}",
+            "excluded": excluded,
+            "candidate_count": 0,
+        }
     filename = build_filename(batch_id, now)
     uploads_dir = Path(folders["uploads"])
     out_path = _unique_path(uploads_dir / filename)

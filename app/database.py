@@ -429,6 +429,76 @@ def init_db() -> None:
             );
             CREATE INDEX IF NOT EXISTS idx_uat_results_run ON uat_results(run_id);
             CREATE INDEX IF NOT EXISTS idx_uat_results_test ON uat_results(test_id);
+
+            CREATE TABLE IF NOT EXISTS follow_ups (
+                follow_up_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id  INTEGER,
+                reason        TEXT NOT NULL,
+                owner         TEXT DEFAULT 'recruiter',
+                notes         TEXT DEFAULT '',
+                due_date      TEXT,
+                status        TEXT NOT NULL DEFAULT 'open',
+                created_at    TEXT,
+                completed_at  TEXT,
+                FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_follow_ups_candidate ON follow_ups(candidate_id);
+            CREATE INDEX IF NOT EXISTS idx_follow_ups_status ON follow_ups(status);
+            CREATE INDEX IF NOT EXISTS idx_follow_ups_due ON follow_ups(due_date);
+
+            CREATE TABLE IF NOT EXISTS issues (
+                issue_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                issue_type       TEXT NOT NULL,
+                severity         TEXT NOT NULL DEFAULT 'warning',
+                title            TEXT NOT NULL,
+                detail           TEXT DEFAULT '',
+                candidate_id     INTEGER,
+                batch_id         INTEGER,
+                source_page      TEXT,
+                status           TEXT NOT NULL DEFAULT 'open',
+                resolved_by      TEXT,
+                resolved_at      TEXT,
+                resolution_notes TEXT DEFAULT '',
+                created_at       TEXT,
+                FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
+            CREATE INDEX IF NOT EXISTS idx_issues_type ON issues(issue_type);
+            CREATE INDEX IF NOT EXISTS idx_issues_candidate ON issues(candidate_id);
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                category        TEXT NOT NULL,
+                title           TEXT NOT NULL,
+                message         TEXT NOT NULL,
+                severity        TEXT DEFAULT 'info',
+                link            TEXT,
+                is_read         INTEGER NOT NULL DEFAULT 0,
+                created_at      TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
+            CREATE INDEX IF NOT EXISTS idx_notifications_category ON notifications(category);
+
+            CREATE TABLE IF NOT EXISTS communication_outbox (
+                outbox_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id      INTEGER,
+                channel           TEXT NOT NULL,
+                template_name     TEXT,
+                safe_payload      TEXT DEFAULT '{}',
+                status            TEXT NOT NULL DEFAULT 'draft',
+                attempt_count     INTEGER NOT NULL DEFAULT 0,
+                max_attempts      INTEGER NOT NULL DEFAULT 3,
+                last_attempt_at   TEXT,
+                next_attempt_at   TEXT,
+                provider_reference TEXT,
+                error_summary     TEXT,
+                created_at        TEXT,
+                updated_at        TEXT,
+                FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_comm_outbox_status ON communication_outbox(status);
+            CREATE INDEX IF NOT EXISTS idx_comm_outbox_channel ON communication_outbox(channel);
+            CREATE INDEX IF NOT EXISTS idx_comm_outbox_candidate ON communication_outbox(candidate_id);
             """
         )
 
@@ -2607,6 +2677,342 @@ def uat_export_results(run_id: int) -> list[dict]:
             "tested_at": r["tested_at"] or "",
         })
     return out
+
+
+# ── Follow-ups ─────────────────────────────────────────────────────────────
+
+
+def create_follow_up(candidate_id: int, reason: str, owner: str = "recruiter",
+                     notes: str = "", due_date: str = "") -> int:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO follow_ups (candidate_id, reason, owner, notes, due_date, "
+            "status, created_at) VALUES (?, ?, ?, ?, ?, 'open', ?)",
+            (candidate_id, reason, owner, notes, due_date, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def update_follow_up(follow_up_id: int, **fields) -> bool:
+    allowed = {"reason", "owner", "notes", "due_date", "status", "completed_at"}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return False
+    conn = _get_connection()
+    try:
+        set_sql = ", ".join(f"{k} = ?" for k in sets)
+        cur = conn.execute(
+            f"UPDATE follow_ups SET {set_sql} WHERE follow_up_id = ?",
+            [*sets.values(), follow_up_id],
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_follow_ups(status: Optional[str] = None, limit: int = 50) -> list[dict]:
+    conn = _get_connection()
+    try:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM follow_ups WHERE status = ? "
+                "ORDER BY follow_up_id DESC LIMIT ?", (status, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM follow_ups ORDER BY follow_up_id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_follow_ups_for_candidate(candidate_id: int) -> list[dict]:
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM follow_ups WHERE candidate_id = ? "
+            "ORDER BY follow_up_id DESC", (candidate_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_overdue_follow_ups() -> list[dict]:
+    now = _now()
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM follow_ups WHERE status = 'open' AND due_date < ? "
+            "ORDER BY due_date ASC", (now,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_follow_up_summary() -> dict:
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) AS c FROM follow_ups GROUP BY status"
+        ).fetchall()
+        summary = {"open": 0, "completed": 0, "cancelled": 0, "total": 0}
+        total = 0
+        for r in rows:
+            s = (r["status"] or "").lower()
+            summary[s] = summary.get(s, 0) + r["c"]
+            total += r["c"]
+        summary["total"] = total
+        return summary
+    finally:
+        conn.close()
+
+
+# ── Issues ─────────────────────────────────────────────────────────────────
+
+
+def create_issue(issue_type: str, severity: str, title: str, detail: str = "",
+                 candidate_id: Optional[int] = None, batch_id: Optional[int] = None,
+                 source_page: str = "") -> int:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO issues (issue_type, severity, title, detail, candidate_id, "
+            "batch_id, source_page, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)",
+            (issue_type, severity, title, detail, candidate_id, batch_id,
+             source_page, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def update_issue(issue_id: int, **fields) -> bool:
+    allowed = {
+        "issue_type", "severity", "title", "detail", "candidate_id",
+        "batch_id", "source_page", "status", "resolved_by", "resolved_at",
+        "resolution_notes",
+    }
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return False
+    conn = _get_connection()
+    try:
+        set_sql = ", ".join(f"{k} = ?" for k in sets)
+        cur = conn.execute(
+            f"UPDATE issues SET {set_sql} WHERE issue_id = ?",
+            [*sets.values(), issue_id],
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_issues(status: Optional[str] = None, issue_type: Optional[str] = None,
+                limit: int = 100) -> list[dict]:
+    conn = _get_connection()
+    try:
+        sql = "SELECT * FROM issues WHERE 1=1"
+        params: list = []
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        if issue_type:
+            sql += " AND issue_type = ?"
+            params.append(issue_type)
+        sql += " ORDER BY issue_id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_issue_summary() -> dict:
+    conn = _get_connection()
+    try:
+        status_rows = conn.execute(
+            "SELECT status, COUNT(*) AS c FROM issues GROUP BY status"
+        ).fetchall()
+        type_rows = conn.execute(
+            "SELECT issue_type, COUNT(*) AS c FROM issues GROUP BY issue_type"
+        ).fetchall()
+        by_status = {r["status"]: r["c"] for r in status_rows}
+        by_type = {r["issue_type"]: r["c"] for r in type_rows}
+        total = sum(by_status.values())
+        return {"total": total, "by_status": by_status, "by_type": by_type}
+    finally:
+        conn.close()
+
+
+def resolve_issue(issue_id: int, resolved_by: str, resolution_notes: str = "") -> bool:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE issues SET status = 'resolved', resolved_by = ?, "
+            "resolved_at = ?, resolution_notes = ? WHERE issue_id = ?",
+            (resolved_by, _now(), resolution_notes, issue_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+# ── Notifications ──────────────────────────────────────────────────────────
+
+
+def create_notification(category: str, title: str, message: str,
+                        severity: str = "info", link: str = "") -> int:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO notifications (category, title, message, severity, link, "
+            "is_read, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
+            (category, title, message, severity, link, _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def mark_notification_read(notification_id: int) -> bool:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE notifications SET is_read = 1 WHERE notification_id = ?",
+            (notification_id,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def mark_all_notifications_read() -> bool:
+    conn = _get_connection()
+    try:
+        conn.execute("UPDATE notifications SET is_read = 1 WHERE is_read = 0")
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+
+def list_notifications(is_read: Optional[bool] = None,
+                       limit: int = 50) -> list[dict]:
+    conn = _get_connection()
+    try:
+        sql = "SELECT * FROM notifications WHERE 1=1"
+        params: list = []
+        if is_read is not None:
+            sql += " AND is_read = ?"
+            params.append(1 if is_read else 0)
+        sql += " ORDER BY notification_id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def count_unread_notifications() -> int:
+    conn = _get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS c FROM notifications WHERE is_read = 0"
+        ).fetchone()
+        return int(row["c"]) if row else 0
+    finally:
+        conn.close()
+
+
+# ── Communication Outbox ───────────────────────────────────────────────────
+
+
+def create_outbox_message(candidate_id: Optional[int], channel: str,
+                          template_name: str = "", safe_payload: str = "{}") -> int:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "INSERT INTO communication_outbox (candidate_id, channel, template_name, "
+            "safe_payload, status, attempt_count, max_attempts, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'draft', 0, 3, ?, ?)",
+            (candidate_id, channel, template_name, safe_payload, _now(), _now()),
+        )
+        conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def update_outbox_message(outbox_id: int, **fields) -> bool:
+    allowed = {
+        "candidate_id", "channel", "template_name", "safe_payload", "status",
+        "attempt_count", "max_attempts", "last_attempt_at", "next_attempt_at",
+        "provider_reference", "error_summary",
+    }
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return False
+    sets["updated_at"] = _now()
+    conn = _get_connection()
+    try:
+        set_sql = ", ".join(f"{k} = ?" for k in sets)
+        cur = conn.execute(
+            f"UPDATE communication_outbox SET {set_sql} WHERE outbox_id = ?",
+            [*sets.values(), outbox_id],
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def list_outbox_messages(status: Optional[str] = None, channel: Optional[str] = None,
+                         limit: int = 50) -> list[dict]:
+    conn = _get_connection()
+    try:
+        sql = "SELECT * FROM communication_outbox WHERE 1=1"
+        params: list = []
+        if status:
+            sql += " AND status = ?"
+            params.append(status)
+        if channel:
+            sql += " AND channel = ?"
+            params.append(channel)
+        sql += " ORDER BY outbox_id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def cancel_outbox_message(outbox_id: int) -> bool:
+    conn = _get_connection()
+    try:
+        cur = conn.execute(
+            "UPDATE communication_outbox SET status = 'cancelled', updated_at = ? "
+            "WHERE outbox_id = ? AND status NOT IN ('sent', 'cancelled')",
+            (_now(), outbox_id),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
 
 
 init_db()

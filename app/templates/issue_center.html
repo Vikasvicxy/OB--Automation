@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Issue Center - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Issue Center</div>
+                <h1 class="page-title">Issue Center</h1>
+                <p class="page-subtitle">Track, investigate and resolve issues across OCR, Resolver, Portal and more</p>
+            </div>
+            <div>
+                <button id="btnCreateIssue" class="btn btn-primary btn-sm">+ New Issue</button>
+            </div>
+        </header>
+
+        <section aria-label="Issue summary">
+            <h3 class="section-heading">Overview</h3>
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-attention">{{ summary.by_status.get("open", 0) if summary and summary.by_status else 0 }}</div>
+                    <div class="kpi-label">Open</div>
+                    <div class="kpi-desc">Awaiting triage</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-draft">{{ summary.by_status.get("investigating", 0) if summary and summary.by_status else 0 }}</div>
+                    <div class="kpi-label">Investigating</div>
+                    <div class="kpi-desc">Under review</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ summary.by_status.get("resolved", 0) if summary and summary.by_status else 0 }}</div>
+                    <div class="kpi-label">Resolved</div>
+                    <div class="kpi-desc">Issues closed</div>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Issues by type">
+            <h3 class="section-heading">By Type</h3>
+            <div class="kpi-grid">
+                {% for t_type, t_count in summary.by_type.items() if summary and summary.by_type %}
+                <div class="kpi-card">
+                    <div class="kpi-count">{{ t_count }}</div>
+                    <div class="kpi-label">{{ t_type }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section aria-label="Create issue form" id="createIssueSection" hidden>
+            <h3 class="section-heading">New Issue</h3>
+            <form id="createIssueForm" class="settings-section" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px;">
+                    <div>
+                        <label for="issueType" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Issue Type</label>
+                        <select id="issueType" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                            <option value="">Select type</option>
+                            <option value="OCR">OCR</option>
+                            <option value="Resolver">Resolver</option>
+                            <option value="Portal">Portal</option>
+                            <option value="Data Quality">Data Quality</option>
+                            <option value="Template">Template</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="issueSeverity" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Severity</label>
+                        <select id="issueSeverity" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                            <option value="Low">Low</option>
+                            <option value="Medium" selected>Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="issueCandidate" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Candidate ID (optional)</label>
+                        <input id="issueCandidate" type="number" min="1" placeholder="—" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                    </div>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="issueTitle" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Title</label>
+                    <input id="issueTitle" type="text" required placeholder="Brief issue title" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="issueDescription" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Description</label>
+                    <textarea id="issueDescription" rows="3" placeholder="Detailed description" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;resize:vertical;"></textarea>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" class="btn btn-primary btn-sm">Create Issue</button>
+                    <button type="button" id="btnCancelIssue" class="btn btn-outline btn-sm">Cancel</button>
+                </div>
+            </form>
+        </section>
+
+        <section aria-label="Resolve issue form" id="resolveIssueSection" hidden>
+            <h3 class="section-heading">Resolve Issue <span id="resolveIssueId"></span></h3>
+            <form id="resolveIssueForm" class="settings-section" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px;">
+                <input type="hidden" id="resolveIssueInput" value="">
+                <div style="margin-bottom:16px;">
+                    <label for="resolveNotes" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Resolution Notes</label>
+                    <textarea id="resolveNotes" rows="3" required placeholder="Describe the resolution" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;resize:vertical;"></textarea>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" class="btn btn-primary btn-sm">Mark Resolved</button>
+                    <button type="button" id="btnCancelResolve" class="btn btn-outline btn-sm">Cancel</button>
+                </div>
+            </form>
+        </section>
+
+        <section aria-label="Issues table">
+            <h3 class="section-heading">All Issues</h3>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Type</th>
+                            <th>Severity</th>
+                            <th>Title</th>
+                            <th>Status</th>
+                            <th>Candidate</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="issuesBody">
+                        <tr><td colspan="8" class="ui-loading"><div class="spinner"></div>Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="issuesEmpty" class="ui-empty" hidden>
+                <span class="empty-ic">&#9888;</span>
+                No issues recorded yet.
+            </div>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var tbody = document.getElementById("issuesBody");
+            var emptyEl = document.getElementById("issuesEmpty");
+            var createSection = document.getElementById("createIssueSection");
+            var createBtn = document.getElementById("btnCreateIssue");
+            var cancelCreate = document.getElementById("btnCancelIssue");
+            var createForm = document.getElementById("createIssueForm");
+            var resolveSection = document.getElementById("resolveIssueSection");
+            var cancelResolve = document.getElementById("btnCancelResolve");
+            var resolveForm = document.getElementById("resolveIssueForm");
+
+            createBtn.addEventListener("click", function () { createSection.hidden = false; resolveSection.hidden = true; });
+            cancelCreate.addEventListener("click", function () { createSection.hidden = true; createForm.reset(); });
+            cancelResolve.addEventListener("click", function () { resolveSection.hidden = true; resolveForm.reset(); });
+
+            createForm.addEventListener("submit", function (e) {
+                e.preventDefault();
+                var payload = {
+                    issue_type: document.getElementById("issueType").value,
+                    severity: document.getElementById("issueSeverity").value,
+                    candidate_id: document.getElementById("issueCandidate").value ? parseInt(document.getElementById("issueCandidate").value, 10) : null,
+                    title: document.getElementById("issueTitle").value.trim(),
+                    description: document.getElementById("issueDescription").value.trim()
+                };
+                fetch("/api/issues", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        if (typeof showToast === "function") showToast("Issue created", "success");
+                        createSection.hidden = true;
+                        createForm.reset();
+                        loadIssues();
+                    } else {
+                        if (typeof showToast === "function") showToast(data.error || "Failed", "error");
+                    }
+                })
+                .catch(function () {
+                    if (typeof showToast === "function") showToast("Network error", "error");
+                });
+            });
+
+            resolveForm.addEventListener("submit", function (e) {
+                e.preventDefault();
+                var issueId = document.getElementById("resolveIssueInput").value;
+                fetch("/api/issues/" + issueId + "/resolve", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ resolution_notes: document.getElementById("resolveNotes").value.trim() })
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        if (typeof showToast === "function") showToast("Issue resolved", "success");
+                        resolveSection.hidden = true;
+                        resolveForm.reset();
+                        loadIssues();
+                    } else {
+                        if (typeof showToast === "function") showToast(data.error || "Failed", "error");
+                    }
+                })
+                .catch(function () {
+                    if (typeof showToast === "function") showToast("Network error", "error");
+                });
+            });
+
+            function loadIssues() {
+                fetch("/api/issues")
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) {
+                        var items = (data && data.issues) ? data.issues : [];
+                        tbody.innerHTML = "";
+                        if (!items.length) {
+                            tbody.parentElement.hidden = true;
+                            emptyEl.hidden = false;
+                            return;
+                        }
+                        tbody.parentElement.hidden = false;
+                        emptyEl.hidden = true;
+                        items.forEach(function (iss) {
+                            var tr = document.createElement("tr");
+                            var s = (iss.status || "").toLowerCase();
+                            var statusClass = s === "resolved" ? "ready" : (s === "investigating" ? "draft" : "attention");
+                            var sev = (iss.severity || "").toLowerCase();
+                            var sevClass = sev === "critical" || sev === "high" ? "attention" : (sev === "medium" ? "draft" : "");
+                            tr.innerHTML =
+                                "<td>" + (iss.issue_id || "—") + "</td>" +
+                                "<td>" + (iss.issue_type || "—") + "</td>" +
+                                "<td><span class='status-badge status-" + sevClass + "'>" + (iss.severity || "—") + "</span></td>" +
+                                "<td>" + (iss.title || "—") + "</td>" +
+                                "<td><span class='status-badge status-" + statusClass + "'>" + (iss.status || "open") + "</span></td>" +
+                                "<td>" + (iss.candidate_id ? "<a href='/candidate/" + iss.candidate_id + "'>#" + iss.candidate_id + "</a>" : "—") + "</td>" +
+                                "<td>" + (iss.created_at || "—") + "</td>" +
+                                "<td>" + (s !== "resolved" ? "<button class='btn btn-sm btn-outline resolve-btn' data-id='" + iss.issue_id + "'>Resolve</button>" : "—") + "</td>";
+                            tbody.appendChild(tr);
+                        });
+
+                        document.querySelectorAll(".resolve-btn").forEach(function (btn) {
+                            btn.addEventListener("click", function () {
+                                document.getElementById("resolveIssueInput").value = btn.getAttribute("data-id");
+                                document.getElementById("resolveIssueId").textContent = "#" + btn.getAttribute("data-id");
+                                resolveSection.hidden = false;
+                                createSection.hidden = true;
+                                document.getElementById("resolveNotes").focus();
+                            });
+                        });
+                    })
+                    .catch(function () {
+                        tbody.innerHTML = "";
+                        tbody.parentElement.hidden = true;
+                        emptyEl.hidden = false;
+                    });
+            }
+
+            loadIssues();
+        })();
+    </script>
+</body>
+</html>

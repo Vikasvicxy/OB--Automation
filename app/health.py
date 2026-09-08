@@ -15,14 +15,13 @@ from pathlib import Path
 from app import admin_master, database, master_data
 from app import backup_service as backup
 from app import ocr_backends
+from app.config import APP_VERSION
 from app.portal import esampark, selectors
 
 OK = "OK"
 WARNING = "WARNING"
 ERROR = "ERROR"
 LOCKED = "LOCKED"
-
-APP_VERSION = "0.1.0"
 
 
 def _report(name: str, status: str, detail: str = ""):
@@ -168,6 +167,41 @@ def _version() -> dict:
                    f"{APP_VERSION} ({commit})" if commit else APP_VERSION)
 
 
+def _safety_flags() -> dict:
+    """Surface the dangerous feature flags as a single safety card."""
+    from app.config import FeatureFlags
+    live = FeatureFlags.REAL_UPLOAD_ENABLED
+    portal_live = FeatureFlags.ESAMPARK_LIVE_TEST_MODE
+    comm = FeatureFlags.COMMUNICATION_ENABLED
+    # Safety is OK only when all dangerous operations are locked.
+    if live or portal_live or comm:
+        flags = []
+        if live:
+            flags.append("REAL_UPLOAD_ENABLED")
+        if portal_live:
+            flags.append("ESAMPARK_LIVE_TEST_MODE")
+        if comm:
+            flags.append("COMMUNICATION_ENABLED")
+        return _report("Safety Flags", WARNING,
+                       "Enabled: " + ", ".join(flags))
+    return _report("Safety Flags", OK, "All live operations locked")
+
+
+def _communication_status() -> dict:
+    """Report communication channel/provider availability (no secrets)."""
+    try:
+        from app.communication import get_communication_service
+        svc = get_communication_service()
+        enabled = [ch for ch in ("whatsapp", "email", "sms", "voice")
+                   if svc.is_channel_enabled(ch)]
+        if not enabled:
+            return _report("Communication", OK, "Dry-run only (all channels off)")
+        return _report("Communication", WARNING,
+                       "Enabled: " + ", ".join(enabled))
+    except Exception as e:  # noqa: BLE001
+        return _report("Communication", WARNING, f"{e}")
+
+
 def build_health_report() -> dict:
     """Build the full ordered health report for the page + JSON endpoint."""
     cards = [
@@ -182,6 +216,8 @@ def build_health_report() -> dict:
         _portal_selectors(),
         _live_upload(),
         _config_status(),
+        _safety_flags(),
+        _communication_status(),
         _disk_status(),
         _last_backup(),
         _version(),

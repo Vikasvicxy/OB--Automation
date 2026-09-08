@@ -2330,6 +2330,280 @@ async def uat_export_api(request: Request):
     return JSONResponse({"error": "format must be csv or xlsx"}, status_code=400)
 
 
+# ── Follow-ups / Task Tracking ────────────────────────────────────────────────
+
+@app.get("/follow-ups", response_class=HTMLResponse)
+async def follow_ups_page(request: Request):
+    from datetime import date
+    today = date.today().isoformat()
+    all_follow_ups = database.list_follow_ups(limit=200)
+    overdue = [f for f in all_follow_ups if f.get("due_date") and f["due_date"] < today and f["status"] == "open"]
+    due_today = [f for f in all_follow_ups if f.get("due_date") == today and f["status"] == "open"]
+    upcoming = [f for f in all_follow_ups if f.get("due_date") and f["due_date"] > today and f["status"] == "open"]
+    completed = [f for f in all_follow_ups if f["status"] == "completed"]
+    
+    summary = database.get_follow_up_summary()
+    
+    # Enrich with candidate names
+    for f in all_follow_ups:
+        if f.get("candidate_id"):
+            c = database.get_candidate(f["candidate_id"])
+            f["candidate_name"] = c.get("name", "") if c else ""
+    
+    return templates.TemplateResponse("follow_ups.html", {
+        "request": request,
+        "follow_ups": all_follow_ups,
+        "overdue": overdue,
+        "due_today": due_today,
+        "upcoming": upcoming,
+        "completed": completed,
+        "summary": summary,
+        "today": today,
+        "candidates": database.list_candidates(),
+        "nav_active": "follow_ups",
+    })
+
+@app.post("/api/follow-ups")
+async def api_create_follow_up(request: Request):
+    data = await request.json() or {}
+    candidate_id = data.get("candidate_id")
+    reason = (data.get("reason") or "").strip()
+    if not reason:
+        return JSONResponse({"ok": False, "error": "Reason is required"}, status_code=422)
+    fid = database.create_follow_up(
+        candidate_id=int(candidate_id) if candidate_id else None,
+        reason=reason,
+        owner=data.get("owner", "recruiter"),
+        notes=data.get("notes", ""),
+        due_date=data.get("due_date"),
+    )
+    return JSONResponse({"ok": True, "follow_up_id": fid})
+
+@app.put("/api/follow-ups/{follow_up_id}")
+async def api_update_follow_up(follow_up_id: int, request: Request):
+    data = await request.json() or {}
+    ok = database.update_follow_up(follow_up_id, **data)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "Not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+@app.post("/api/follow-ups/{follow_up_id}/complete")
+async def api_complete_follow_up(follow_up_id: int):
+    from datetime import datetime
+    ok = database.update_follow_up(follow_up_id, status="completed",
+                                    completed_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    if not ok:
+        return JSONResponse({"ok": False, "error": "Not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+@app.delete("/api/follow-ups/{follow_up_id}")
+async def api_delete_follow_up(follow_up_id: int):
+    ok = database.update_follow_up(follow_up_id, status="cancelled")
+    if not ok:
+        return JSONResponse({"ok": False, "error": "Not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+@app.get("/api/follow-ups")
+async def api_list_follow_ups(status: str = ""):
+    follow_ups = database.list_follow_ups(status=status if status else None)
+    return JSONResponse({"follow_ups": follow_ups})
+
+
+# ── Issue Center ──────────────────────────────────────────────────────────────
+
+@app.get("/issues", response_class=HTMLResponse)
+async def issue_center_page(request: Request):
+    issues = database.list_issues(limit=200)
+    summary = database.get_issue_summary()
+    return templates.TemplateResponse("issue_center.html", {
+        "request": request,
+        "issues": issues,
+        "summary": summary,
+        "candidates": database.list_candidates(),
+        "nav_active": "issues",
+    })
+
+@app.post("/api/issues")
+async def api_create_issue(request: Request):
+    data = await request.json() or {}
+    title = (data.get("title") or "").strip()
+    issue_type = (data.get("issue_type") or "other").strip()
+    if not title:
+        return JSONResponse({"ok": False, "error": "Title is required"}, status_code=422)
+    iid = database.create_issue(
+        issue_type=issue_type,
+        severity=data.get("severity", "warning"),
+        title=title,
+        detail=data.get("detail", ""),
+        candidate_id=int(data["candidate_id"]) if data.get("candidate_id") else None,
+        batch_id=int(data["batch_id"]) if data.get("batch_id") else None,
+        source_page=data.get("source_page", ""),
+    )
+    return JSONResponse({"ok": True, "issue_id": iid})
+
+@app.post("/api/issues/{issue_id}/resolve")
+async def api_resolve_issue(issue_id: int, request: Request):
+    data = await request.json() or {}
+    notes = data.get("resolution_notes", "")
+    ok = database.resolve_issue(issue_id, resolved_by="local-admin", resolution_notes=notes)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "Not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+@app.put("/api/issues/{issue_id}")
+async def api_update_issue(issue_id: int, request: Request):
+    data = await request.json() or {}
+    ok = database.update_issue(issue_id, **data)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "Not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+@app.get("/api/issues")
+async def api_list_issues(status: str = "", issue_type: str = ""):
+    issues = database.list_issues(
+        status=status if status else None,
+        issue_type=issue_type if issue_type else None,
+    )
+    return JSONResponse({"issues": issues})
+
+
+# ── Communications (Dry-Run by default) ───────────────────────────────────────
+
+@app.get("/communications", response_class=HTMLResponse)
+async def communications_page(request: Request):
+    from app.communication import get_communication_service, TEMPLATES
+    svc = get_communication_service()
+    outbox = database.list_outbox_messages(limit=50)
+    channels = {
+        "whatsapp": svc.is_channel_enabled("whatsapp"),
+        "email": svc.is_channel_enabled("email"),
+        "sms": svc.is_channel_enabled("sms"),
+        "voice": svc.is_channel_enabled("voice"),
+    }
+    template_list = [
+        {"id": name, "name": name.replace("_", " ").title()}
+        for name in TEMPLATES.keys()
+    ]
+    return templates.TemplateResponse("communications.html", {
+        "request": request,
+        "outbox": outbox,
+        "channels": channels,
+        "templates": template_list,
+        "nav_active": "communications",
+    })
+
+@app.post("/api/communications/send")
+async def api_communications_send(request: Request):
+    from app.communication import get_communication_service
+    data = await request.json() or {}
+    svc = get_communication_service()
+    template_name = data.get("template_name") or data.get("template_id", "")
+    payload = data.get("payload") or {}
+    pay = dict(payload)
+    if data.get("recipient") and not pay.get("recipient"):
+        pay["recipient"] = data["recipient"]
+    result = svc.send_message(
+        candidate_id=int(data["candidate_id"]) if data.get("candidate_id") else None,
+        channel=data.get("channel", "whatsapp"),
+        template_name=template_name,
+        payload=pay,
+        dry_run=True,  # ALWAYS dry-run in current production
+    )
+    return JSONResponse(result)
+
+@app.post("/api/communications/preview")
+async def api_communications_preview(request: Request):
+    from app.communication import get_communication_service
+    data = await request.json() or {}
+    svc = get_communication_service()
+    preview = svc.render_preview(
+        channel=data.get("channel", "whatsapp"),
+        template_name=data.get("template_name", ""),
+        payload=data.get("payload", {}),
+    )
+    return JSONResponse(preview)
+
+@app.get("/api/communications/outbox")
+async def api_outbox(channel: str = "", status: str = ""):
+    messages = database.list_outbox_messages(
+        channel=channel if channel else None,
+        status=status if status else None,
+    )
+    return JSONResponse({"messages": messages})
+
+@app.post("/api/communications/outbox/{outbox_id}/cancel")
+async def api_cancel_outbox(outbox_id: int):
+    ok = database.cancel_outbox_message(outbox_id)
+    if not ok:
+        return JSONResponse({"ok": False, "error": "Not found"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+@app.get("/notifications", response_class=HTMLResponse)
+async def notifications_page(request: Request):
+    notifications = database.list_notifications(limit=100)
+    unread_count = database.count_unread_notifications()
+    return templates.TemplateResponse("notifications_center.html", {
+        "request": request,
+        "notifications": notifications,
+        "unread_count": unread_count,
+        "nav_active": "notifications",
+    })
+
+@app.get("/api/notifications")
+async def api_list_notifications(is_read: str = ""):
+    read_filter = None
+    if is_read == "true":
+        read_filter = True
+    elif is_read == "false":
+        read_filter = False
+    notifications = database.list_notifications(is_read=read_filter)
+    unread = database.count_unread_notifications()
+    return JSONResponse({"notifications": notifications, "unread_count": unread})
+
+@app.post("/api/notifications/{notification_id}/read")
+async def api_mark_notification_read(notification_id: int):
+    ok = database.mark_notification_read(notification_id)
+    return JSONResponse({"ok": ok})
+
+@app.post("/api/notifications/read-all")
+async def api_mark_all_read():
+    database.mark_all_notifications_read()
+    return JSONResponse({"ok": True})
+
+@app.get("/api/notifications/unread-count")
+async def api_unread_count():
+    return JSONResponse({"count": database.count_unread_notifications()})
+
+
+# ── Diagnostic Bundle ─────────────────────────────────────────────────────────
+
+@app.get("/api/diagnostics/bundle")
+async def api_diagnostic_bundle():
+    from app.logging_config import create_diagnostic_bundle
+    return JSONResponse(create_diagnostic_bundle())
+
+@app.get("/api/diagnostics/logs")
+async def api_diagnostic_logs(category: str = "", lines: int = 50):
+    from app.logging_config import get_recent_logs
+    return JSONResponse({"logs": get_recent_logs(category=category or None, lines=lines)})
+
+
+# ── Version / About ───────────────────────────────────────────────────────────
+
+@app.get("/api/version")
+async def api_version():
+    from app.config import APP_VERSION
+    from app.backup_service import git_commit
+    return JSONResponse({
+        "version": APP_VERSION,
+        "git_commit": git_commit(),
+        "python": f"{__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}",
+    })
+
+
 # ── Startup: record master load history ─────────────────────────────────────
 
 

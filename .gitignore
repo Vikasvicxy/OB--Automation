@@ -25,4 +25,5 @@ data/database/
 data/generated/
 data/backups/
 data/portal/
+data/logs/
 .pytest_cache/

@@ -57,6 +57,21 @@
             </div>
         </div>
 
+        <div class="nav-group" data-group="operations">
+            <button type="button" class="nav-group-toggle" data-group="operations" aria-expanded="false">
+                <span class="nav-icon">&#9998;</span> Operations
+                <span class="nav-group-arrow">&#9654;</span>
+            </button>
+            <div class="nav-group-items">
+                <a href="/follow-ups" class="nav-item {% if active == 'follow_ups' %}active{% endif %}">Follow Ups</a>
+                <a href="/issues" class="nav-item {% if active == 'issues' %}active{% endif %}">Issue Center</a>
+                <a href="/communications" class="nav-item {% if active == 'communications' %}active{% endif %}">Communications</a>
+                <a href="/notifications" class="nav-item {% if active == 'notifications' %}active{% endif %}">
+                    Notifications
+                </a>
+            </div>
+        </div>
+
         <div class="nav-group" data-group="system">
             <button type="button" class="nav-group-toggle" data-group="system" aria-expanded="false">
                 <span class="nav-icon">&#9881;</span> System

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Communications - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Communications</div>
+                <h1 class="page-title">Communications &amp; Dry-Run</h1>
+                <p class="page-subtitle">Preview and test candidate notifications across all channels</p>
+            </div>
+        </header>
+
+        <section aria-label="Channel status">
+            <h3 class="section-heading">Channels</h3>
+            <div class="kpi-grid">
+                <div class="kpi-card" style="position:relative;">
+                    <div class="kpi-count kpi-tone-draft">DRY RUN</div>
+                    <div class="kpi-label">WhatsApp</div>
+                    <div class="kpi-desc">{{ channels.whatsapp | default(0) }} templates available</div>
+                    <span class="status-badge status-draft" style="position:absolute;top:10px;right:10px;">Dry Run</span>
+                </div>
+                <div class="kpi-card" style="position:relative;">
+                    <div class="kpi-count kpi-tone-draft">DRY RUN</div>
+                    <div class="kpi-label">Email</div>
+                    <div class="kpi-desc">{{ channels.email | default(0) }} templates available</div>
+                    <span class="status-badge status-draft" style="position:absolute;top:10px;right:10px;">Dry Run</span>
+                </div>
+                <div class="kpi-card" style="position:relative;">
+                    <div class="kpi-count kpi-tone-draft">DRY RUN</div>
+                    <div class="kpi-label">SMS</div>
+                    <div class="kpi-desc">{{ channels.sms | default(0) }} templates available</div>
+                    <span class="status-badge status-draft" style="position:absolute;top:10px;right:10px;">Dry Run</span>
+                </div>
+                <div class="kpi-card" style="position:relative;">
+                    <div class="kpi-count kpi-tone-draft">DRY RUN</div>
+                    <div class="kpi-label">Voice</div>
+                    <div class="kpi-desc">{{ channels.voice | default(0) }} templates available</div>
+                    <span class="status-badge status-draft" style="position:absolute;top:10px;right:10px;">Dry Run</span>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Send dry-run form">
+            <h3 class="section-heading">Send Dry-Run Message</h3>
+            <form id="dryRunForm" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px;margin-bottom:28px;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px;">
+                    <div>
+                        <label for="drChannel" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Channel</label>
+                        <select id="drChannel" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="email">Email</option>
+                            <option value="sms">SMS</option>
+                            <option value="voice">Voice</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="drTemplate" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Template</label>
+                        <select id="drTemplate" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                            {% for t in templates or [] %}
+                            <option value="{{ t.id }}">{{ t.name }}</option>
+                            {% endfor %}
+                            {% if not templates %}
+                            <option value="" disabled>No templates loaded</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="drRecipient" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Recipient</label>
+                        <input id="drRecipient" type="text" required placeholder="Phone or email" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                    </div>
+                </div>
+                <div style="margin-bottom:16px;">
+                    <label for="drCandidate" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Candidate ID (optional)</label>
+                    <input id="drCandidate" type="number" min="1" placeholder="—" style="width:200px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                </div>
+                <div id="drPreview" style="margin-bottom:16px;padding:14px;background:#f8fafc;border:1px solid var(--border);border-radius:8px;display:none;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;margin-bottom:8px;">Message Preview</div>
+                    <div id="drPreviewContent" style="font-size:0.88rem;line-height:1.6;white-space:pre-wrap;"></div>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="button" id="btnPreview" class="btn btn-outline btn-sm">Preview</button>
+                    <button type="submit" class="btn btn-primary btn-sm">Send Dry-Run</button>
+                </div>
+            </form>
+        </section>
+
+        <section aria-label="Outbox">
+            <h3 class="section-heading">Outbox</h3>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Channel</th>
+                            <th>Template</th>
+                            <th>Recipient</th>
+                            <th>Status</th>
+                            <th>Attempts</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="outboxBody">
+                        <tr><td colspan="7" class="ui-loading"><div class="spinner"></div>Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="outboxEmpty" class="ui-empty" hidden>
+                <span class="empty-ic">&#9993;</span>
+                No messages sent yet. Use the form above to send a dry-run.
+            </div>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var tbody = document.getElementById("outboxBody");
+            var emptyEl = document.getElementById("outboxEmpty");
+            var form = document.getElementById("dryRunForm");
+            var previewBtn = document.getElementById("btnPreview");
+            var previewBox = document.getElementById("drPreview");
+            var previewContent = document.getElementById("drPreviewContent");
+
+            previewBtn.addEventListener("click", function () {
+                var channel = document.getElementById("drChannel").value;
+                var template = document.getElementById("drTemplate");
+                var recipient = document.getElementById("drRecipient").value || "(not set)";
+                var candidateId = document.getElementById("drCandidate").value || "—";
+                previewContent.textContent =
+                    "Channel: " + channel.toUpperCase() + "\n" +
+                    "Template: " + (template.options[template.selectedIndex] ? template.options[template.selectedIndex].text : "—") + "\n" +
+                    "Recipient: " + recipient + "\n" +
+                    "Candidate ID: " + candidateId + "\n" +
+                    "Mode: DRY RUN (no real message will be sent)";
+                previewBox.style.display = "block";
+            });
+
+            form.addEventListener("submit", function (e) {
+                e.preventDefault();
+                var payload = {
+                    channel: document.getElementById("drChannel").value,
+                    template_id: document.getElementById("drTemplate").value,
+                    recipient: document.getElementById("drRecipient").value.trim(),
+                    candidate_id: document.getElementById("drCandidate").value ? parseInt(document.getElementById("drCandidate").value, 10) : null,
+                    dry_run: true
+                };
+                fetch("/api/communications/send", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        if (typeof showToast === "function") showToast("Dry-run message queued", "success");
+                        previewBox.style.display = "none";
+                        loadOutbox();
+                    } else {
+                        if (typeof showToast === "function") showToast(data.error || "Failed", "error");
+                    }
+                })
+                .catch(function () {
+                    if (typeof showToast === "function") showToast("Network error", "error");
+                });
+            });
+
+            function loadOutbox() {
+                fetch("/api/communications/outbox")
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) {
+                        var items = (data && data.messages) ? data.messages : [];
+                        tbody.innerHTML = "";
+                        if (!items.length) {
+                            tbody.parentElement.hidden = true;
+                            emptyEl.hidden = false;
+                            return;
+                        }
+                        tbody.parentElement.hidden = false;
+                        emptyEl.hidden = true;
+                        items.forEach(function (m) {
+                            var tr = document.createElement("tr");
+                            var st = (m.status || "").toLowerCase();
+                            var statusClass = st === "sent" || st === "delivered" ? "ready" : (st === "failed" ? "attention" : "draft");
+                            tr.innerHTML =
+                                "<td>" + (m.message_id || "—") + "</td>" +
+                                "<td>" + (m.channel || "—") + "</td>" +
+                                "<td>" + (m.template_name || "—") + "</td>" +
+                                "<td>" + (m.recipient || "—") + "</td>" +
+                                "<td><span class='status-badge status-" + statusClass + "'>" + (m.status || "queued") + "</span></td>" +
+                                "<td>" + (m.attempts != null ? m.attempts : 0) + "</td>" +
+                                "<td>" + (m.created_at || "—") + "</td>";
+                            tbody.appendChild(tr);
+                        });
+                    })
+                    .catch(function () {
+                        tbody.innerHTML = "";
+                        tbody.parentElement.hidden = true;
+                        emptyEl.hidden = false;
+                    });
+            }
+
+            loadOutbox();
+        })();
+    </script>
+</body>
+</html>

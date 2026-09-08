@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notifications - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Notifications</div>
+                <h1 class="page-title">Notifications</h1>
+                <p class="page-subtitle">System alerts, warnings and activity updates</p>
+            </div>
+            <div>
+                <button id="btnMarkAllRead" class="btn btn-outline btn-sm">Mark All Read</button>
+            </div>
+        </header>
+
+        <section aria-label="Notification summary">
+            <h3 class="section-heading">Summary</h3>
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-attention">{{ unread_count }}</div>
+                    <div class="kpi-label">Unread</div>
+                    <div class="kpi-desc">Needs attention</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ (notifications | length) - unread_count }}</div>
+                    <div class="kpi-label">Read</div>
+                    <div class="kpi-desc">Previously viewed</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count">{{ notifications | length }}</div>
+                    <div class="kpi-label">Total</div>
+                    <div class="kpi-desc">All notifications</div>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Notifications list">
+            <h3 class="section-heading">Notifications</h3>
+            <div id="notificationsList">
+                <div class="ui-loading"><div class="spinner"></div>Loading…</div>
+            </div>
+            <div id="notificationsEmpty" class="ui-empty" hidden>
+                <span class="empty-ic">&#128276;</span>
+                No notifications yet.
+            </div>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var listEl = document.getElementById("notificationsList");
+            var emptyEl = document.getElementById("notificationsEmpty");
+            var markAllBtn = document.getElementById("btnMarkAllRead");
+
+            markAllBtn.addEventListener("click", function () {
+                fetch("/api/notifications/read-all", { method: "POST" })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.success) {
+                            if (typeof showToast === "function") showToast("All notifications marked as read", "success");
+                            loadNotifications();
+                        }
+                    })
+                    .catch(function () {
+                        if (typeof showToast === "function") showToast("Network error", "error");
+                    });
+            });
+
+            function markRead(id) {
+                fetch("/api/notifications/" + id + "/read", { method: "POST" })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.success) loadNotifications();
+                    })
+                    .catch(function () {
+                        if (typeof showToast === "function") showToast("Network error", "error");
+                    });
+            }
+
+            function loadNotifications() {
+                fetch("/api/notifications")
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) {
+                        var items = (data && data.notifications) ? data.notifications : [];
+                        listEl.innerHTML = "";
+                        if (!items.length) {
+                            listEl.hidden = true;
+                            emptyEl.hidden = false;
+                            return;
+                        }
+                        listEl.hidden = false;
+                        emptyEl.hidden = true;
+                        items.forEach(function (n) {
+                            var isRead = n.is_read || n.read;
+                            var cat = (n.category || "info").toLowerCase();
+                            var catClass = cat === "error" || cat === "critical" ? "attention" : (cat === "warning" ? "draft" : (cat === "success" ? "ready" : ""));
+                            var div = document.createElement("div");
+                            div.className = "settings-card" + (isRead ? "" : " unread");
+                            div.style.cssText = "display:flex;align-items:flex-start;gap:14px;padding:14px 18px;margin-bottom:8px;cursor:pointer;" + (!isRead ? "border-left:3px solid var(--accent-blue);" : "");
+                            div.innerHTML =
+                                "<div style='flex:1;'>" +
+                                    "<div style='font-size:0.88rem;font-weight:" + (!isRead ? "700" : "500") + ";margin-bottom:4px;'>" + (n.title || "Notification") + "</div>" +
+                                    "<div style='font-size:0.82rem;color:var(--text-secondary);line-height:1.5;'>" + (n.message || n.detail || "") + "</div>" +
+                                    "<div style='margin-top:6px;font-size:0.78rem;color:var(--text-secondary);'>" +
+                                        "<span class='status-badge status-" + catClass + "' style='margin-right:8px;'>" + (n.category || "info") + "</span>" +
+                                        (n.created_at || "") +
+                                    "</div>" +
+                                "</div>" +
+                                (!isRead ? "<button class='btn btn-sm btn-outline mark-read-btn' data-id='" + (n.notification_id || n.id || "") + "'>Mark Read</button>" : "<span class='status-badge status-ready'>Read</span>");
+                            listEl.appendChild(div);
+                        });
+
+                        document.querySelectorAll(".mark-read-btn").forEach(function (btn) {
+                            btn.addEventListener("click", function (e) {
+                                e.stopPropagation();
+                                markRead(btn.getAttribute("data-id"));
+                            });
+                        });
+                    })
+                    .catch(function () {
+                        listEl.innerHTML = "";
+                        listEl.hidden = true;
+                        emptyEl.hidden = false;
+                    });
+            }
+
+            loadNotifications();
+        })();
+    </script>
+</body>
+</html>

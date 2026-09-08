@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Follow-ups - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Follow-ups</div>
+                <h1 class="page-title">Follow-ups &amp; Task Tracking</h1>
+                <p class="page-subtitle">Track candidate follow-ups, deadlines, and pending actions</p>
+            </div>
+            <div>
+                <button id="btnAddFollowup" class="btn btn-primary btn-sm">+ New Follow-up</button>
+            </div>
+        </header>
+
+        <section aria-label="Follow-up summary">
+            <h3 class="section-heading">Summary</h3>
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-count">{{ due_today | length }}</div>
+                    <div class="kpi-label">Due Today</div>
+                    <div class="kpi-desc">Action required today</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-attention">{{ overdue | length }}</div>
+                    <div class="kpi-label">Overdue</div>
+                    <div class="kpi-desc">Past due date</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-draft">{{ upcoming | length }}</div>
+                    <div class="kpi-label">Upcoming</div>
+                    <div class="kpi-desc">Future due dates</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-count kpi-tone-ready">{{ completed | length }}</div>
+                    <div class="kpi-label">Completed</div>
+                    <div class="kpi-desc">Resolved items</div>
+                </div>
+            </div>
+        </section>
+
+        <section aria-label="Add follow-up form" id="addFollowupSection" hidden>
+            <h3 class="section-heading">New Follow-up</h3>
+            <form id="addFollowupForm" class="settings-section" style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px;">
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:16px;">
+                    <div>
+                        <label for="fuCandidate" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Candidate ID</label>
+                        <input id="fuCandidate" type="number" min="1" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                    </div>
+                    <div>
+                        <label for="fuReason" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Reason</label>
+                        <input id="fuReason" type="text" required placeholder="e.g. Missing document" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                    </div>
+                    <div>
+                        <label for="fuOwner" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Owner</label>
+                        <input id="fuOwner" type="text" placeholder="Assigned to" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                    </div>
+                    <div>
+                        <label for="fuDueDate" style="font-size:0.82rem;font-weight:600;display:block;margin-bottom:4px;">Due Date</label>
+                        <input id="fuDueDate" type="date" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.88rem;">
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <button type="submit" class="btn btn-primary btn-sm">Create Follow-up</button>
+                    <button type="button" id="btnCancelFollowup" class="btn btn-outline btn-sm">Cancel</button>
+                </div>
+            </form>
+        </section>
+
+        <section aria-label="Follow-ups table">
+            <h3 class="section-heading">All Follow-ups</h3>
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Candidate</th>
+                            <th>Reason</th>
+                            <th>Owner</th>
+                            <th>Due Date</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="followupsBody">
+                        <tr><td colspan="7" class="ui-loading"><div class="spinner"></div>Loading…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="followupsEmpty" class="ui-empty" hidden>
+                <span class="empty-ic">&#128203;</span>
+                No follow-ups yet. Click "New Follow-up" to create one.
+            </div>
+        </section>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        (function () {
+            var tbody = document.getElementById("followupsBody");
+            var emptyEl = document.getElementById("followupsEmpty");
+            var addSection = document.getElementById("addFollowupSection");
+            var addBtn = document.getElementById("btnAddFollowup");
+            var cancelBtn = document.getElementById("btnCancelFollowup");
+            var addForm = document.getElementById("addFollowupForm");
+
+            addBtn.addEventListener("click", function () { addSection.hidden = false; });
+            cancelBtn.addEventListener("click", function () { addSection.hidden = true; addForm.reset(); });
+
+            addForm.addEventListener("submit", function (e) {
+                e.preventDefault();
+                var payload = {
+                    candidate_id: parseInt(document.getElementById("fuCandidate").value, 10),
+                    reason: document.getElementById("fuReason").value.trim(),
+                    owner: document.getElementById("fuOwner").value.trim(),
+                    due_date: document.getElementById("fuDueDate").value
+                };
+                fetch("/api/follow-ups", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        if (typeof showToast === "function") showToast("Follow-up created", "success");
+                        addSection.hidden = true;
+                        addForm.reset();
+                        loadFollowups();
+                    } else {
+                        if (typeof showToast === "function") showToast(data.error || "Failed", "error");
+                    }
+                })
+                .catch(function () {
+                    if (typeof showToast === "function") showToast("Network error", "error");
+                });
+            });
+
+            function loadFollowups() {
+                fetch("/api/follow-ups")
+                    .then(function (res) { return res.json(); })
+                    .then(function (data) {
+                        var items = (data && data.follow_ups) ? data.follow_ups : [];
+                        tbody.innerHTML = "";
+                        if (!items.length) {
+                            tbody.parentElement.hidden = true;
+                            emptyEl.hidden = false;
+                            return;
+                        }
+                        tbody.parentElement.hidden = false;
+                        emptyEl.hidden = true;
+                        items.forEach(function (f) {
+                            var tr = document.createElement("tr");
+                            var statusClass = (f.status || "").toLowerCase() === "completed" ? "ready" : ((f.status || "").toLowerCase() === "overdue" ? "attention" : "draft");
+                            tr.innerHTML =
+                                "<td>" + (f.followup_id || "—") + "</td>" +
+                                "<td><a href='/candidate/" + (f.candidate_id || "") + "'>#" + (f.candidate_id || "—") + " " + (f.candidate_name || "") + "</a></td>" +
+                                "<td>" + (f.reason || "—") + "</td>" +
+                                "<td>" + (f.owner || "—") + "</td>" +
+                                "<td>" + (f.due_date || "—") + "</td>" +
+                                "<td><span class='status-badge status-" + statusClass + "'>" + (f.status || "open") + "</span></td>" +
+                                "<td><button class='btn btn-sm btn-outline complete-fu' data-id='" + (f.followup_id || "") + "'>Complete</button></td>";
+                            tbody.appendChild(tr);
+                        });
+
+                        document.querySelectorAll(".complete-fu").forEach(function (btn) {
+                            btn.addEventListener("click", function () {
+                                fetch("/api/follow-ups/" + btn.getAttribute("data-id") + "/complete", { method: "POST" })
+                                    .then(function (r) { return r.json(); })
+                                    .then(function (data) {
+                                        if (data.success) {
+                                            if (typeof showToast === "function") showToast("Follow-up completed", "success");
+                                            loadFollowups();
+                                        } else {
+                                            if (typeof showToast === "function") showToast(data.error || "Failed", "error");
+                                        }
+                                    })
+                                    .catch(function () {
+                                        if (typeof showToast === "function") showToast("Network error", "error");
+                                    });
+                            });
+                        });
+                    })
+                    .catch(function () {
+                        tbody.innerHTML = "";
+                        tbody.parentElement.hidden = true;
+                        emptyEl.hidden = false;
+                    });
+            }
+
+            loadFollowups();
+        })();
+    </script>
+</body>
+</html>
