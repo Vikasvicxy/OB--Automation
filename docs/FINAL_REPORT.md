@@ -1,8 +1,8 @@
 # TeamHR Automation — Final Report
 
-**Version:** 0.1.0
+**Version:** 1.0.0-rc1
 **Date:** 2026-09-08
-**Status:** Production-hardening baseline complete
+**Status:** Release candidate 1 validated; READY FOR MANUAL UAT
 
 ---
 
@@ -51,20 +51,27 @@ production use.
 | | Diagnostic bundle endpoint | Complete |
 | | Windows launcher scripts | Complete |
 | | Security / PII / failure-injection tests | Complete |
+| **RC (new)** | Release Readiness page + `/api/release/readiness` | Complete |
+| | UAT critical filter/tag (31 high-risk tests) | Complete |
+| | Version 1.0.0-rc1 across app, manifest, sidebar | Complete |
 
 ---
 
 ## 3. Test Counts
 
-- **336 automated tests collected and passing.**
-- 31 new production-hardening tests added covering:
+- **343 automated tests collected and passing.**
+- 38 new production-hardening tests added covering:
   - Security (SQL injection, XSS, path traversal, malformed zip, API input validation)
   - PII leak prevention across all non-detail surfaces
   - Feature-flag defaults (dangerous operations disabled)
   - Database integrity (foreign keys, indexes, idempotent init)
   - New features (follow-ups, issues, notifications, outbox, diagnostics, version)
   - Failure injection (missing masters, unwritable folders)
+  - RC features (UAT critical filter, release-readiness gates/status/endpoint)
 - 305 pre-existing tests continue to pass with no regressions.
+- Release candidate validation script adds 65 independent runtime checks
+  (routes, eSampark safety, comm dry-run, diagnostics PII, backup round-trip,
+  logging sanitization, version, health cards) — all passing.
 
 ---
 
@@ -99,13 +106,46 @@ production use.
 
 ---
 
-## 6. Honest Readiness Status
+## 6. Packaging Assessment
 
-**Ready for local/offline production use** with all safety flags disabled by
-default. What is NOT yet wired for full production:
+**Chosen method (verified):** Python source tree + local `venv` + Windows
+launcher scripts (`scripts/Start-TeamHR.ps1` / `.bat`, `Stop-TeamHR.ps1`,
+`setup_windows.ps1`). This is the only method exercised end-to-end in this
+release candidate (clean-install test passed; launcher start/stop cycle passed).
+
+**Why not a single EXE:** the app runs directly from source under FastAPI +
+Jinja2 + SQLite; creating a frozen EXE (PyInstaller) would add a heavy, unproven
+build step, complicate the eSampark Playwright browser and RapidOCR ONNX model
+packaging, and is unnecessary for a Windows-local single-machine deployment.
+This remains a documented future option.
+
+**Release folder:** `release/TeamHR/` contains `app`, `scripts`, `docs`,
+`README.md`, `requirements.txt`, `.env.example`, `.gitignore` (2.28 MB, no
+runtime DB, no uploads, no logs, no backups, no secrets, no `venv`).
+
+**Offline limitation:** the packaged core (OCR, DB, masters, validation,
+Excel generation, backup) is fully offline. First-time setup requires internet
+for `pip install` and `playwright install chromium`; live eSampark upload and
+communication sends additionally require internet and explicit flag enablement.
+
+---
+
+## 7. Honest Readiness Status
+
+**Release candidate `1.0.0-rc1`: READY FOR MANUAL UAT.** All automated gates pass
+(version, DB integrity, masters, OCR, selectors, safety flags locked, comm
+channels disabled, backup present, health no errors). Manual UAT (172 tests,
+31 tagged Critical) has NOT been executed yet by an operator and is not
+auto-marked PASS. Per the release ladder in `app/release_readiness.py`, the
+app reports exactly `READY FOR MANUAL UAT` and does not auto-assert controlled
+trial or eSampark-test readiness.
+
+What is NOT yet wired for full production:
 
 - **Live portal submission / real communication** intentionally disabled — requires
   operator-supplied credentials and an explicit production decision.
+- **Manual UAT completion** — must be executed in the UAT center; the Critical set
+  gates any controlled trial.
 - **Custom OCR / portal selector tuning** — functional but should be validated
   against real document/portal samples before high-volume use.
 - **Resolved defects** tracked through the new Issue Center as they surface (Set B
@@ -113,3 +153,4 @@ default. What is NOT yet wired for full production:
 
 These are addressed by flipping the appropriate feature flags per
 `docs/CONFIGURATION.md` after validation.
+

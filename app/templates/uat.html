@@ -42,6 +42,9 @@
         .uat-status-btns button.btn-reset{background:#f1f5f9;color:#64748b;border-color:#e2e8f0}
         .uat-status-btns button.active{box-shadow:0 0 0 2px var(--accent-blue)}
         .uat-row .status-badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:0.72rem;font-weight:700}
+        .uat-row.critical .tid{font-weight:700}
+        .uat-row.critical{background:rgba(185,28,28,0.04)}
+        .critical-badge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:6px;font-size:0.62rem;font-weight:700;background:#fee2e2;color:#991b1b;border:1px solid #fecaca;vertical-align:1px}
         .status-PASS{background:#e6f7ee;color:#0a7a4c}
         .status-FAIL{background:#fee2e2;color:#991b1b}
         .status-BLOCKED{background:#fef3c7;color:#92400e}
@@ -107,6 +110,7 @@
         {# ── Filters ──────────────────────────────────────── #}
         <div class="uat-filter-bar" id="filterBar">
             <button class="active" data-filter="all" onclick="setFilter('all')">All</button>
+            <button data-filter="CRITICAL" onclick="setFilter('CRITICAL')">Critical ({{ critical_count }})</button>
             <button data-filter="PASS" onclick="setFilter('PASS')">Passed</button>
             <button data-filter="FAIL" onclick="setFilter('FAIL')">Failed</button>
             <button data-filter="BLOCKED" onclick="setFilter('BLOCKED')">Blocked</button>
@@ -136,8 +140,8 @@
                         <div>Tested At</div>
                     </div>
                     {% for tid, tname in group.tests %}
-                    <div class="uat-row" data-tid="{{ tid }}" data-status="NOT_TESTED">
-                        <div class="tid">{{ tid }}</div>
+                    <div class="uat-row{% if tid in critical %} critical{% endif %}" data-tid="{{ tid }}" data-status="NOT_TESTED">
+                        <div class="tid">{{ tid }}{% if tid in critical %} <span class="critical-badge" title="Highest-risk release gating test">CRIT</span>{% endif %}</div>
                         <div class="tname">{{ tname }}</div>
                         <div class="uat-status-btns">
                             <button class="btn-pass" onclick="setResult('{{ tid }}','PASS')" title="PASS">&#10003;</button>
@@ -220,6 +224,9 @@
         var notesMap = {};
         var statusMap = {};
         var searchFilter = '';
+        var criticalSet = {};
+        var criticalList = {{ critical | tojson }};
+        for (var i = 0; i < criticalList.length; i++) criticalSet[criticalList[i]] = true;
 
         // Load existing results into state
         for (var i = 0; i < results.length; i++) {
@@ -319,7 +326,10 @@
                 var tid = row.getAttribute('data-tid');
                 var st = statusMap[tid] || 'NOT_TESTED';
                 var tname = row.querySelector('.tname').textContent.toLowerCase();
-                var showFilter = activeFilter === 'all' || st === activeFilter;
+                var showFilter;
+                if (activeFilter === 'all') showFilter = true;
+                else if (activeFilter === 'CRITICAL') showFilter = criticalSet[tid] === true;
+                else showFilter = st === activeFilter;
                 var showSearch = !q || tid.toLowerCase().indexOf(q) > -1 || tname.indexOf(q) > -1;
                 row.style.display = (showFilter && showSearch) ? '' : 'none';
             }

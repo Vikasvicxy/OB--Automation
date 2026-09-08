@@ -223,7 +223,7 @@ def create_backup(include_generated: bool = False) -> dict:
     manifest = {
         "backup_version": BACKUP_VERSION,
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "app_version": "0.1.0",
+        "app_version": "1.0.0-rc1",
         "git_commit": git_commit(),
         "database_filename": "teamhr.db",
         "database_size": db_size,

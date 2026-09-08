@@ -682,3 +682,97 @@ def test_backup_folder_unwritable():
     else:
         # If it somehow succeeded, the db snapshot must still be intact.
         assert result.get("ok") is True
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 7. RC FEATURES - UAT critical filter + Release Readiness
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def test_uat_critical_filter_is_subset():
+    """UAT critical ids are a non-empty subset of the full 172-case catalog."""
+    from app import uat_catalog
+    assert uat_catalog.UAT_TOTAL == 172
+    assert uat_catalog.UAT_CRITICAL_COUNT > 0
+    assert uat_catalog.UAT_CRITICAL_COUNT < uat_catalog.UAT_TOTAL
+    # Every critical id must exist in the catalog lookup.
+    assert all(tid in uat_catalog.UAT_TEST_LOOKUP for tid in uat_catalog.UAT_CRITICAL)
+
+
+def test_uat_critical_tracks_release_risk_areas():
+    """Critical set covers PII, backup integrity and portal safety ids."""
+    from app import uat_catalog
+    # Safety-critical live-upload tests must be tagged critical.
+    for tid in ("L04", "L05", "L07", "L08"):
+        assert uat_catalog.is_critical(tid), tid
+    # PII/export surfaces must be tagged.
+    for tid in ("A08", "E06", "F13", "H08"):
+        assert uat_catalog.is_critical(tid), tid
+    # A navigation-only id must NOT be critical.
+    assert not uat_catalog.is_critical("A01")
+
+
+def test_uat_page_renders_critical_filter():
+    """UAT page renders the Critical filter and badges, without auto-PASS."""
+    from app import main
+    from fastapi.testclient import TestClient
+    client = TestClient(main.app)
+    r = client.get("/uat")
+    assert r.status_code == 200
+    assert "Critical" in r.text
+    assert "criticalList" in r.text
+    # Test rows start as NOT_TESTED; no auto-pass marking on page load.
+    assert 'data-status="NOT_TESTED"' in r.text
+    assert 'data-status="PASS"' not in r.text
+    assert "NOT_TESTED" in r.text
+    # All 172 test rows present.
+    import re
+    tids = re.findall(r'data-tid="([A-Z]\d{2})"', r.text)
+    assert len(set(tids)) == 172
+
+
+def test_release_readiness_uses_allowed_status():
+    """Release readiness returns one of the four allowed status strings."""
+    from app import release_readiness
+    import app.database as db
+
+    # temp DB is empty (no masters) -> status should still be a valid value.
+    rd = release_readiness.release_status()
+    assert rd["status"] in release_readiness.ALLOWED_STATUSES
+    assert rd["gates_total"] == len(rd["gates"]) == 10
+    assert 0 <= rd["gates_passed"] <= rd["gates_total"]
+    assert rd["version"]
+    assert isinstance(rd["uat"], dict)
+    assert "all_critical_pass" in rd["uat"]
+
+
+def test_release_readiness_endpoint():
+    """/api/release/readiness returns JSON with an allowed status."""
+    from app import main
+    from fastapi.testclient import TestClient
+    client = TestClient(main.app)
+    r = client.get("/api/release/readiness")
+    assert r.status_code == 200
+    data = r.json()
+    from app import release_readiness
+    assert data["status"] in release_readiness.ALLOWED_STATUSES
+
+
+def test_release_page_renders():
+    """/release page renders the gate checklist."""
+    from app import main
+    from fastapi.testclient import TestClient
+    client = TestClient(main.app)
+    r = client.get("/release")
+    assert r.status_code == 200
+    assert "Release status" in r.text
+    assert "Release Gate Checklist" in r.text
+
+
+def test_release_readiness_version_is_rc():
+    """Status carries the rc version and that version is not a dev throwaway."""
+    from app import release_readiness
+    from app.config import APP_VERSION
+    assert release_readiness.release_status()["version"] == APP_VERSION
+    # RC version must not be a bare dev placeholder.
+    assert APP_VERSION and APP_VERSION not in ("", "0.0.0", "0.1.0")

@@ -1024,6 +1024,26 @@ async def api_health():
     return JSONResponse(health_service.json_health())
 
 
+# ── Release Readiness ────────────────────────────────────────────────────────
+
+
+@app.get("/release", response_class=HTMLResponse)
+async def release_page(request: Request):
+    from app import release_readiness
+    data = release_readiness.release_status()
+    return templates.TemplateResponse("release.html", {
+        "request": request,
+        "data": data,
+        "nav_active": "release",
+    })
+
+
+@app.get("/api/release/readiness")
+async def api_release_readiness():
+    from app import release_readiness
+    return JSONResponse(release_readiness.release_status())
+
+
 # ── Candidate drafts (Smart Upload / Manual Entry recovery) ─────────────────
 
 
@@ -2205,7 +2225,7 @@ async def api_evidence_score(request: Request):
 
 @app.get("/uat", response_class=HTMLResponse)
 async def uat_page(request: Request):
-    from app.uat_catalog import UAT_GROUPS
+    from app.uat_catalog import UAT_GROUPS, UAT_CRITICAL, UAT_CRITICAL_COUNT
     run_id = request.query_params.get("run")
     current_run = None
     results = []
@@ -2225,6 +2245,8 @@ async def uat_page(request: Request):
         "request": request,
         "groups": UAT_GROUPS,
         "groups_map": groups_map,
+        "critical": sorted(UAT_CRITICAL),
+        "critical_count": UAT_CRITICAL_COUNT,
         "current_run": current_run,
         "results": results,
         "runs": runs,

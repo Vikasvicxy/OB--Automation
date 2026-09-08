@@ -148,9 +148,11 @@ Test categories:
 There is no formal build step — the app runs directly from source.
 
 1. All tests pass: `pytest tests/ -v`
-2. Set version in `app/config.py` (`APP_VERSION`)
-3. Create a git tag: `git tag v0.1.0`
+2. Set version in `app/config.py` (`APP_VERSION`) and `app/templates/partials/_sidebar.html`
+3. Create a git tag: `git tag teamhr-local-v1.0.0-rc1`
 4. Verify health: `GET /api/health` returns `"overall": "ok"`
-5. Create a backup as a release artifact
+5. Verify release readiness: `GET /api/release/readiness` returns an allowed status string
+6. Create a backup as a release artifact
+7. Complete the manual UAT critical set in the UAT center before any controlled trial
 
 The `scripts/Start-TeamHR.ps1` script handles deployment on a single Windows machine.

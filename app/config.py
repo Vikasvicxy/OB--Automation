@@ -6,8 +6,8 @@ Reads from environment variables and .env file.
 import os
 from typing import Any, Dict, Optional
 
-APP_VERSION = "0.1.0"
-TEAMHR_VERSION = "0.1.0"
+APP_VERSION = "1.0.0-rc1"
+TEAMHR_VERSION = "1.0.0-rc1"
 
 
 class FeatureFlags:

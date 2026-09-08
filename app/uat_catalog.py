@@ -271,3 +271,27 @@ for _g in UAT_GROUPS:
 
 # Total number of UAT tests
 UAT_TOTAL = sum(len(g["tests"]) for g in UAT_GROUPS)
+
+# ── Critical (highest-risk) UAT tests ────────────────────────────────────────
+# A focused subset of the full catalog covering test ids that gate release:
+# PII exposure, live-upload safety, backup/restore integrity, and generation
+# correctness. The full 172-case catalog is unchanged; this is a filter/tag only
+# and does NOT auto-mark any manual test as PASS.
+UAT_CRITICAL: set[str] = {
+    # PII / export never leak full Aadhaar or address
+    "A08", "A09", "D08", "D09", "E06", "E07", "F13", "H08", "H09", "K14",
+    # Core data correctness
+    "B04", "B12", "B15", "B16", "C07", "C08", "E04", "F08", "F11",
+    # Backup / restore integrity
+    "J04", "J08", "J09", "J12", "J13",
+    # Portal safety must stay LOCKED
+    "K11", "L02", "L03", "L04", "L05", "L07", "L08",
+}
+
+
+def is_critical(test_id: str) -> bool:
+    return test_id in UAT_CRITICAL
+
+
+# Number of critical tests
+UAT_CRITICAL_COUNT = len(UAT_CRITICAL)

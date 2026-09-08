@@ -3,16 +3,21 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $PidFile = Join-Path $ProjectRoot "data\server.pid"
 
 if (Test-Path $PidFile) {
-    $pid = Get-Content $PidFile | Select-Object -First 1
+    $serverPid = Get-Content $PidFile | Select-Object -First 1
     try {
-        Stop-Process -Id $pid -Force -ErrorAction Stop
-        Write-Host "[OK] Server stopped (PID: $pid)" -ForegroundColor Green
+        Stop-Process -Id $serverPid -Force -ErrorAction Stop
+        Write-Host "[OK] Server stopped (PID: $serverPid)" -ForegroundColor Green
     } catch {
-        Write-Host "[WARNING] Process $pid not found or already stopped" -ForegroundColor Yellow
+        Write-Host "[WARNING] Process $serverPid not found or already stopped" -ForegroundColor Yellow
     }
     Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "[INFO] No PID file found. Trying to stop uvicorn processes..." -ForegroundColor Yellow
-    Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*uvicorn*teamhr*" } | Stop-Process -Force
+    $uvicornProcs = Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*uvicorn*app.main*" }
+    if ($uvicornProcs) {
+        $uvicornProcs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        Write-Host "[OK] Stopped $($uvicornProcs.Count) uvicorn process(es)" -ForegroundColor Green
+    }
 }
 Write-Host "[OK] TeamHR stopped" -ForegroundColor Green

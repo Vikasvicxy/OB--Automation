@@ -62,13 +62,23 @@ Before any release, verify each item. All must pass.
 ## Version
 
 - [ ] Version set: `APP_VERSION` in `app/config.py` matches release version
-- [ ] Version tag created: `git tag v<version>`
+- [ ] Version shown in sidebar (`app/templates/partials/_sidebar.html`)
+- [ ] Version embedded in backup manifest (`app/backup_service.py`)
+- [ ] Release readiness page shows an allowed status string (`GET /api/release/readiness`)
+- [ ] Version tag created: `git tag teamhr-local-v<version>`
 
 ## Health
 
 - [ ] Health endpoint: `GET /api/health` returns `"overall": "ok"`
 - [ ] All health cards show OK or WARNING (no ERROR)
 - [ ] Disk space available (at least 1 GB free)
+
+## Release Readiness
+
+- [ ] `GET /api/release/readiness` returns one of the four allowed status strings
+- [ ] All automated release gates pass (`gates_passed == gates_total`)
+- [ ] No auto-assertion of controlled-local-trial / eSampark readiness without operator decision
+- [ ] Manual UAT Critical set (31 tests) is not auto-marked PASS
 
 ## Final
 

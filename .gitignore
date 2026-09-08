@@ -27,3 +27,6 @@ data/backups/
 data/portal/
 data/logs/
 .pytest_cache/
+
+# Packaged release artifacts (built from source; never committed)
+release/

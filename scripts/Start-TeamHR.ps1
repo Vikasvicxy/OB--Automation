@@ -3,7 +3,7 @@
 
 param(
     [int]$Port = 8000,
-    [string]$Host = "127.0.0.1"
+    [string]$ListenHost = "127.0.0.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -49,8 +49,8 @@ if ($portCheck) {
 }
 
 # Start server
-Write-Host "[INFO] Starting TeamHR on http://${Host}:${Port}" -ForegroundColor Green
-$serverProc = Start-Process -FilePath $venvPython -ArgumentList "-m", "uvicorn", "app.main:app", "--host", $Host, "--port", $Port -WorkingDirectory $ProjectRoot -PassThru -NoNewWindow -RedirectStandardOutput $LogFile -RedirectStandardError (Join-Path $ProjectRoot "data\logs\server_error.log")
+Write-Host "[INFO] Starting TeamHR on http://${ListenHost}:${Port}" -ForegroundColor Green
+$serverProc = Start-Process -FilePath $venvPython -ArgumentList "-m", "uvicorn", "app.main:app", "--host", $ListenHost, "--port", $Port -WorkingDirectory $ProjectRoot -PassThru -NoNewWindow -RedirectStandardOutput $LogFile -RedirectStandardError (Join-Path $ProjectRoot "data\logs\server_error.log")
 
 # Save PID
 $serverProc.Id | Out-File -FilePath $PidFile -Encoding ASCII
@@ -58,8 +58,8 @@ Write-Host "[OK] Server started (PID: $($serverProc.Id))" -ForegroundColor Green
 
 # Wait briefly then open browser
 Start-Sleep -Seconds 2
-Start-Process "http://${Host}:${Port}"
+Start-Process "http://${ListenHost}:${Port}"
 Write-Host "[OK] Browser opened" -ForegroundColor Green
 Write-Host ""
-Write-Host "TeamHR is running at http://${Host}:${Port}" -ForegroundColor Cyan
+Write-Host "TeamHR is running at http://${ListenHost}:${Port}" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop, or run scripts\Stop-TeamHR.ps1" -ForegroundColor Gray

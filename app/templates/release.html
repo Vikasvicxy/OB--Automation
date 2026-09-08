@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Release Readiness - TeamHR Automation</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+    <link rel="stylesheet" href="/static/manual_entry.css">
+    <style>
+        .rr-banner { font-size:1.05rem; font-weight:800; padding:12px 18px; border-radius:12px; display:inline-block; margin-bottom:6px; }
+        .rr-banner.not-ready { background:rgba(200,20,20,.15); color:var(--accent-red); }
+        .rr-banner.ready { background:rgba(0,128,0,.12); color:var(--accent-green); }
+        .rr-meta { font-size:0.85rem; color:var(--text-secondary); margin-bottom:20px; }
+        .rr-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:14px; }
+        .rr-card h3 { margin:0 0 10px; font-size:0.95rem; }
+        table { border-collapse:collapse; }
+        .gate-table { width:100%; font-size:0.85rem; }
+        .gate-table td, .gate-table th { padding:7px 10px; border-bottom:1px solid var(--border); text-align:left; }
+        .gate-pass { color:var(--accent-green); font-weight:800; }
+        .gate-fail { color:var(--accent-red); font-weight:800; }
+        .badge { display:inline-block; padding:2px 10px; border-radius:8px; font-size:0.72rem; font-weight:700; }
+        .badge-ok { background:#e6f7ee; color:#0a7a4c; }
+        .badge-nok { background:#fee2e2; color:#991b1b; }
+        .kpi-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+        .kpi { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:12px 18px; min-width:140px; }
+        .kpi .k-lbl { font-size:0.72rem; color:var(--text-secondary); text-transform:uppercase; font-weight:700; }
+        .kpi .k-val { font-size:1.1rem; font-weight:800; }
+    </style>
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <div class="breadcrumb"><a href="/">Dashboard</a> <span class="bc-sep">/</span> Release Readiness</div>
+                <h1 class="page-title">Release Readiness</h1>
+                <p class="page-subtitle">Automated release-gate checklist for the current candidate build</p>
+            </div>
+            <div>
+                <a href="/uat" class="btn btn-sm btn-outline">UAT / Acceptance Test</a>
+                <a href="/health" class="btn btn-sm btn-outline">Health</a>
+            </div>
+        </header>
+
+        <div class="rr-banner {{ 'ready' if data.status == 'READY FOR MANUAL UAT' else 'not-ready' }}">
+            Release status: {{ data.status }}
+        </div>
+        <div class="rr-meta">
+            Version {{ data.version }} &middot; commit {{ data.git_commit or 'n/a' }} &middot;
+            gates {{ data.gates_passed }}/{{ data.gates_total }} passed
+        </div>
+
+        <div class="kpi-row">
+            <div class="kpi"><div class="k-lbl">Release status</div><div class="k-val">{{ data.status }}</div></div>
+            <div class="kpi"><div class="k-lbl">Version</div><div class="k-val">{{ data.version }}</div></div>
+            <div class="kpi"><div class="k-lbl">Git commit</div><div class="k-val" style="font-size:0.9rem">{{ data.git_commit or 'n/a' }}</div></div>
+            <div class="kpi"><div class="k-lbl">Gates</div><div class="k-val">{{ data.gates_passed }}/{{ data.gates_total }}</div></div>
+        </div>
+
+        <div class="rr-card">
+            <h3>Release Gate Checklist</h3>
+            <table class="gate-table">
+                <tr><th style="width:220px">Gate</th><th>Status</th><th>Detail</th></tr>
+                {% for g in data.gates %}
+                <tr>
+                    <td>{{ g.label }}</td>
+                    <td><span class="{{ 'gate-pass' if g.passed else 'gate-fail' }}">{{ 'PASS' if g.passed else 'FAIL' }}</span></td>
+                    <td>{{ g.detail }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="rr-card">
+            <h3>Highest-Risk (Critical) UAT Summary — latest completed run</h3>
+            {% if data.uat.run_id %}
+            <p style="font-size:0.85rem;color:var(--text-secondary)">
+                Run #{{ data.uat.run_id }}: critical tests
+                {{ data.uat.passed }}/{{ data.uat.total }} passed,
+                {{ data.uat.failed }} failed/blocked,
+                {{ data.uat.not_tested }} not tested.
+            </p>
+            <p>
+                <span class="badge {{ 'badge-ok' if data.uat.all_critical_pass else 'badge-nok' }}">
+                    All critical tests pass: {{ 'YES' if data.uat.all_critical_pass else 'NO' }}
+                </span>
+            </p>
+            {% else %}
+            <p style="font-size:0.85rem;color:var(--text-secondary)">
+                No completed UAT run yet. The full manual UAT (172 tests) is executed
+                by an operator in the UAT / Acceptance Test center.
+            </p>
+            {% endif %}
+            <p style="font-size:0.78rem;color:var(--text-secondary);margin-top:8px">{{ data.note }}</p>
+        </div>
+    </main>
+
+    {% include 'partials/_toast.html' %}
+</body>
+</html>
