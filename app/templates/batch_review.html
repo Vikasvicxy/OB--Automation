@@ -114,6 +114,9 @@
                             <td>{{ (c.recruiter_name | default('')) or '&mdash;' | safe }}</td>
                             <td>{{ (c.gender | default('')) or '&mdash;' | safe }}</td>
                             <td style="white-space:nowrap;">
+                                {% if backend_problems and c.candidate_id in backend_problems %}
+                                <span style="color:var(--accent-red);font-size:0.78rem;" title="{{ backend_problems[c.candidate_id] | join(', ') }}">⚠ Missing: {{ backend_problems[c.candidate_id] | join(', ') }}</span><br>
+                                {% endif %}
                                 <a href="/manual-entry?edit={{ c.candidate_id }}" class="btn btn-sm btn-outline">Review</a>
                                 <button class="btn btn-sm btn-danger remove-btn" data-cid="{{ c.candidate_id }}" title="Remove candidate">&times;</button>
                             </td>
@@ -144,13 +147,25 @@
                     <div class="kpi-card">
                         <div class="kpi-label">Self-Onboarding Workbook</div>
                         <div class="kpi-desc" id="pairSoName" style="margin:8px 0;word-break:break-all;">&mdash;</div>
-                        <button class="btn btn-sm btn-outline" data-open-file="pairSoId">Open</button>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            <button class="btn btn-sm btn-outline" data-open-file="pairSoId">Open File</button>
+                            <button class="btn btn-sm btn-outline" data-open-folder="pairSoId">Open Folder</button>
+                            <button class="btn btn-sm btn-outline" data-copy-path="pairSoId">Copy Path</button>
+                        </div>
                     </div>
                     <div class="kpi-card">
                         <div class="kpi-label">TeamHR Backend Mail Workbook</div>
                         <div class="kpi-desc" id="pairObName" style="margin:8px 0;word-break:break-all;">&mdash;</div>
-                        <button class="btn btn-sm btn-outline" data-open-file="pairObId">Open</button>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            <button class="btn btn-sm btn-outline" data-open-file="pairObId">Open File</button>
+                            <button class="btn btn-sm btn-outline" data-open-folder="pairObId">Open Folder</button>
+                            <button class="btn btn-sm btn-outline" data-copy-path="pairObId">Copy Path</button>
+                        </div>
                     </div>
+                </div>
+                <div style="margin-top:14px;padding:12px;background:#f8fafc;border-radius:var(--radius-sm);font-size:0.85rem;line-height:1.6;">
+                    <strong>Self-Onboarding:</strong> Manually upload this file to eSampark.<br>
+                    <strong>TeamHR Backend:</strong> Manually email this file to the backend team.
                 </div>
                 <p style="margin-top:12px;"><a href="/generated-files" class="btn btn-outline btn-sm">Open Generated Files &rarr;</a></p>
             </div>
@@ -246,14 +261,18 @@
                                     data.backend_filename || "";
                                 var soBtn = document.querySelector('[data-open-file="pairSoId"]');
                                 if (soBtn) {
-                                    soBtn.setAttribute("data-open-file", data.self_onboarding_file_id || "");
-                                    soBtn.disabled = !data.self_onboarding_file_id;
+                                    soBtn.setAttribute("data-open-file", data.generated_file_id || data.file_id || "");
+                                    soBtn.disabled = !data.generated_file_id && !data.file_id;
                                 }
                                 var obBtn = document.querySelector('[data-open-file="pairObId"]');
                                 if (obBtn) {
                                     obBtn.setAttribute("data-open-file", data.backend_file_id || "");
                                     obBtn.disabled = !data.backend_file_id;
                                 }
+                                window._pairFilePaths = {
+                                    pairSoId: data.file_path || "",
+                                    pairObId: data.backend_file_path || ""
+                                };
                                 rp.style.display = "";
                                 if (typeof showToast === "function") showToast("Both onboarding workbooks generated.", "success");
                             } else {
@@ -290,6 +309,51 @@
                         .catch(function () {
                             if (typeof showToast === "function") showToast("Network error", "error");
                         });
+                });
+            });
+
+            document.querySelectorAll("[data-open-folder]").forEach(function (b) {
+                b.addEventListener("click", function () {
+                    var key = b.getAttribute("data-open-folder");
+                    var paths = window._pairFilePaths || {};
+                    var filePath = paths[key];
+                    if (!filePath) return;
+                    fetch("/api/generated/open-folder", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ file_path: filePath })
+                    })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (!data.ok && typeof showToast === "function") {
+                                showToast(data.error || "Could not open folder", "error");
+                            }
+                        })
+                        .catch(function () {
+                            if (typeof showToast === "function") showToast("Network error", "error");
+                        });
+                });
+            });
+
+            document.querySelectorAll("[data-copy-path]").forEach(function (b) {
+                b.addEventListener("click", function () {
+                    var key = b.getAttribute("data-copy-path");
+                    var paths = window._pairFilePaths || {};
+                    var filePath = paths[key];
+                    if (!filePath) return;
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText(filePath).then(function () {
+                            if (typeof showToast === "function") showToast("Path copied to clipboard", "success");
+                        });
+                    } else {
+                        var ta = document.createElement("textarea");
+                        ta.value = filePath;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand("copy");
+                        document.body.removeChild(ta);
+                        if (typeof showToast === "function") showToast("Path copied to clipboard", "success");
+                    }
                 });
             });
         })();

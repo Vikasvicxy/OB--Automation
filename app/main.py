@@ -332,6 +332,7 @@ async def batch_review_page(request: Request, batch_id: int = 1):
         "generated": sum(1 for c in batch if c.get("excel_generated") == "true"),
         "other": sum(1 for c in batch if c["status"] not in ("ready", "draft", "needs_attention")),
     }
+    blocking_count, backend_problems = _backend_blocking_info(batch)
     return templates.TemplateResponse(
         "batch_review.html",
         {
@@ -344,23 +345,32 @@ async def batch_review_page(request: Request, batch_id: int = 1):
             "recruiter_name": generation.get_default_recruiter_name(),
             "output_base_dir": str(generation.get_output_base_dir()),
             "generated_files": database.list_generated_files(batch_id),
-            "backend_blocking": _backend_blocking_count(batch),
+            "backend_blocking": blocking_count,
+            "backend_problems": backend_problems,
         },
     )
 
 
-def _backend_blocking_count(batch) -> int:
-    """Number of validated candidates that would block the backend workbook."""
+def _backend_blocking_info(batch) -> tuple[int, dict]:
+    """Return (count, per-candidate problems) for backend blocking.
+
+    ``problems`` maps candidate_id -> list of missing-field labels.
+    """
     try:
         validated = generation.validate_candidates(batch)
         enriched = validated.get("rows", [])
-        # Backend fields (recruiter/DOJ/gender/PIN/Aadhaar/DOB/address) live on
-        # the candidate DB record, not the enriched row — look up by full dict.
         by_id = {c["candidate_id"]: c for c in batch}
         result = generation.build_backend_rows(enriched, by_id)
-        return len([msgs for msgs in result.get("problems", {}).values() if msgs])
+        raw = result.get("problems", {})
+        problems = {cid: msgs for cid, msgs in raw.items() if msgs}
+        return len(problems), problems
     except Exception:
-        return 0
+        return 0, {}
+
+
+def _backend_blocking_count(batch) -> int:
+    """Number of validated candidates that would block the backend workbook."""
+    return _backend_blocking_info(batch)[0]
 
 
 @app.post("/api/remove-candidate/{candidate_id}")
@@ -2053,6 +2063,9 @@ async def generated_open_folder(request: Request):
     data = await request.json() or {}
     file_id = int(data.get("file_id") or 0)
     folder = str(data.get("folder", "") or "")
+    file_path = str(data.get("file_path", "") or "")
+    if not folder and file_path:
+        folder = str(Path(file_path).parent)
     if not folder and file_id:
         gf = database.get_generated_file(file_id)
         if gf:

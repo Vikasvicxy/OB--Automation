@@ -280,6 +280,12 @@
                         <p class="section-desc">Used by both generated workbooks. Date of Joining, Recruiter, Gender (Aadhaar only), PIN and UAN are required/handled here.</p>
                     </div>
                 </div>
+                {% if not recruiter_name %}
+                <div id="recruiterSetupBanner" style="margin:0 0 16px;padding:12px 14px;background:#fef3f2;border:1px solid #f5c6c4;border-radius:var(--radius-sm);color:#8a2b25;font-size:0.88rem;line-height:1.6;">
+                    <strong>Set Recruiter Name</strong> — the TeamHR Backend Mail workbook needs a Recruiter Name.
+                    <a href="/settings" style="margin-left:6px;font-weight:600;">Set it now</a> or type it here per candidate.
+                </div>
+                {% endif %}
                 <div class="field-group">
                     <label for="recruiterNameInput">Recruiter Name</label>
                     <input type="text" id="recruiterNameInput" class="form-input" autocomplete="off" placeholder="Default from Settings">

@@ -360,11 +360,17 @@ _IS_INITIALIZED = False
 
 
 def ensure_masters_loaded() -> None:
-    """Load master data at startup (idempotent)."""
+    """Load master data at startup (idempotent).
+
+    Initializes the DB schema first so a fresh machine's first run (where
+    ``app.main`` imports this module before ``database.init_db()``) never
+    fails on the missing ``master_load_history`` table.
+    """
     global _IS_INITIALIZED
     if _IS_INITIALIZED:
         return
     _IS_INITIALIZED = True
+    database.init_db()
     load_designations()
     load_facilities()
 

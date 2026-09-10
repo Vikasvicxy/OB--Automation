@@ -1,101 +1,115 @@
-# TeamHR Automation — Quick Start
+# TeamHR Automation — Friend Quick Start
 
 ## What it does
 
-TeamHR Automation streamlines HR onboarding for Flipkart/Myntra Last Mile and First Mile operations. It:
+TeamHR Automation turns candidate screenshots (Aadhaar + recruiter details) into **TWO Excel workbooks**:
 
-1. **Pastes/uploads** candidate screenshots (Aadhaar, offer letters)
-2. **Extracts** data via OCR and rules
-3. **Resolves** entities, cost codes, hubs, roles
-4. **Generates TWO Excel workbooks** per batch:
-   - **Self Onboarding** (14 columns) — shared with candidates
-   - **TeamHR Backend Mail** (16 columns) — internal, with full Aadhaar
+1. **Self Onboarding** (14 columns) — share/upload this to eSampark
+2. **TeamHR Backend Mail** (16 columns) — email this to the backend team
 
-## Prerequisites
+You do NOT need to know anything about batches, admin, or portals to use it.
 
-- Python 3.10+
-- Windows (tested on Windows 10/11)
+## First-time setup (once)
 
-## Setup
+1. Copy the **TeamHR-Friend** folder to your laptop (anywhere, e.g. `C:\TeamHR-Friend`)
+2. Double-click `scripts\Setup-Windows.bat` or run in PowerShell:
+   ```powershell
+   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+   .\scripts\setup_windows.ps1
+   ```
+   This installs dependencies and creates a clean empty database.
 
-```bash
-cd C:\TeamHR-Automation
-python -m venv venv
-.\venv\Scripts\activate
-pip install -r requirements.txt
+## Start
+
+Double-click **`scripts\Start-TeamHR.bat`** (or run `scripts\Start-TeamHR.ps1`).
+
+Your browser opens **http://localhost:8000**.
+
+## Normal daily workflow
+
+1. **Set Recruiter Name** (only the first time):
+   - Dashboard → **Settings** (sidebar, bottom)
+   - Type your Recruiter Name → **Save**
+   - It is used in every TeamHR Backend Mail workbook. Not hardcoded anywhere.
+
+2. Dashboard → **+ New Onboarding** (Smart Upload)
+
+3. **Paste** the Aadhaar screenshot AND any screenshot with recruiter details (offer letter / chat)
+
+4. **Review every field** — OCR is not always perfect. Check in particular:
+   - **Date of Joining** (DOJ) — often missing from screenshots
+   - **Gender** — from Aadhaar
+   - **PIN Code**
+   - **Father Name**
+   - **Mobile** — must be 10 digits, no leading zero
+   - **Aadhaar** — 12 digits
+   - **Salary** — displayed as marked in the offer
+
+5. **Fill any missing fields** directly in the review form. If the review page shows a red
+   "Missing: ..." note next to a candidate, click **Review** and fix exactly that field.
+
+6. Click **Save & Approve** (one button — saves and marks the candidate ready)
+
+7. Go to **Batch Review** (sidebar): candidates that are **Ready** can be generated.
+
+8. Click **Generate Onboarding Files**.
+
+   If any candidate is missing a required Backend field, the page shows **exactly which
+   field** is missing (e.g. "Date of Joining required", "Gender required", "PIN Code required").
+   Click **Review** next to that candidate, fix it, click Save & Approve, and return here.
+
+9. Both workbooks are generated from the **same approved candidates**, in the **same order**,
+   with the **same timestamp**:
+
+   - `data\generated\YYYY-MM-DD\uploads\Self_Onboarding_YYYY-MM-DD_HH-MM-SS.xlsx`
+   - `data\generated\YYYY-MM-DD\backend_mail\TeamHR_OB_YYYY-MM-DD_HH-MM-SS.xlsx`
+
+10. On the result panel use **Open File** / **Open Folder** / **Copy Path** to find them.
+
+11. **Self Onboarding** → manually upload the file to eSampark.
+
+12. **TeamHR Backend Mail** → manually email the file to the backend team.
+
+> Nothing is uploaded or emailed automatically.
+
+## Where generated files are stored
+
+```
+data\
+  generated\
+    2026-09-10\                        ← date of generation
+      uploads\                         ← Self Onboarding workbooks (.xlsx)
+        Self_Onboarding_2026-09-10_14-30-05.xlsx
+      backend_mail\                    ← TeamHR Backend Mail workbooks (.xlsx)
+        TeamHR_OB_2026-09-10_14-30-05.xlsx
 ```
 
-## Run
-
-```bash
-# Double-click method:
-scripts\Start-TeamHR.bat
-
-# Or from PowerShell:
-.\scripts\Start-TeamHR.ps1
-```
-
-Then open **http://localhost:8000** in your browser.
-
-## Quick workflow
-
-1. Go to **Smart Upload** (paste or upload screenshots)
-2. Review extracted fields → fill Recruiter, DOJ, Gender, PIN
-3. Click **Save & Approve** (saves to draft + approves in one step)
-4. Go to **Batch Review** → click **Generate Onboarding Files**
-5. Both workbooks appear in `data/generated/YYYY-MM-DD/`
+Each pair shares the same timestamp so they are instantly recognizable as a pair.
 
 ## Key pages
 
-| Page | URL | Purpose |
-|------|-----|---------|
-| Dashboard | `/` | Overview |
-| Smart Upload | `/smart-upload` | Paste/upload screenshots |
-| Manual Entry | `/manual-entry` | Enter data manually |
-| Batch Review | `/batch-review` | Review candidates, generate workbooks |
-| Generated Files | `/generated-files` | View/download generated workbooks |
-| Settings | `/settings` | Output paths, Recruiter Profile |
+| Page | What it's for |
+|------|---------------|
+| Dashboard `/` | Start here — "+ New Onboarding" |
+| Smart Upload `/smart-upload` | Paste/upload screenshots, review, save & approve |
+| Manual Entry `/manual-entry` | Type data by hand (or fix a candidate) |
+| Batch Review `/batch-review` | See Ready candidates, generate the two workbooks |
+| Generated Files `/generated-files` | View/download all generated workbooks |
+| Settings `/settings` | Set Recruiter Name once |
 
-## Safety flags (never enable in local dev)
+## Safety (always ON — do not change)
 
-| Flag | Default | Effect |
-|------|---------|--------|
-| `REAL_UPLOAD_ENABLED` | `false` | Live portal uploads |
-| `ESAMPARK_LIVE_TEST_MODE` | `false` | eSampark test mode |
-| `COMMUNICATION_ENABLED` | `false` | WhatsApp/SMS |
-| `EMAIL_ENABLED` | `false` | Email sends |
+| Setting | Value |
+|---------|-------|
+| Real portal uploads | **OFF** |
+| eSampark live mode | **OFF** |
+| WhatsApp/SMS/Email/Voice | **OFF** |
 
-## Output structure
+All uploads and emails are done manually by you.
 
-```
-data/generated/
-  YYYY-MM-DD/
-    uploads/          ← Self Onboarding workbooks
-    backend_mail/     ← TeamHR Backend Mail workbooks
-    results/          ← Portal results (when connected)
-    errors/           ← Portal errors (when connected)
-    TeamHR_Master_YYYY-MM-DD.xlsx  ← Daily operational master
-```
+## Notes
 
-## Running tests
-
-```bash
-# Quick sanity:
-python tests/test_onboarding_pair.py
-python tests/test_fixes.py
-
-# Full suite:
-python -m pytest tests/test_production_hardening.py -q
-```
-
-## Key conventions
-
-- Full Aadhaar appears ONLY in the Backend Mail workbook and candidate detail page — never in filenames, folders, lists, logs, or the Self Onboarding workbook.
-- DOJ must be explicitly entered and reviewed (never confused with DOB).
-- Gender comes from Aadhaar only (manual entry only — OCR not yet verified for new fields).
-- PIN must be 6 digits; Father Name from S/O/D/O/C/O prefixes only.
-- Recruiter Profile is set once in Settings and used as default for new candidates.
-
-## Troubleshooting
-
-See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues.
+- Full Aadhaar appears ONLY in the TeamHR Backend Mail workbook and the candidate detail
+  page — never in filenames, folders, lists, logs, or the Self Onboarding workbook.
+- If anything looks wrong, click **Review** on the candidate and correct it before generating.
+- See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if the app does not start.
