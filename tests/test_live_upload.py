@@ -74,6 +74,9 @@ def make_single_file(tmp, status="ready", designation=None, facility=True,
         "cost_code": cost_code, "status": status,
         "entity": "Flipkart", "aadhaar_number": "123456789012",
         "salary": salary,
+        "recruiter_name": "Test Recruiter", "doj": "12/08/2026",
+        "gender": "Male", "pin_code": "560001", "dob": "01/01/1995",
+        "address": "12 MG Road, Bengaluru, Karnataka 560001",
     })
     res = generation.generate_batch_excel(batch_id, only_ready=True)
     assert res["success"], res

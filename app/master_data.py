@@ -175,7 +175,7 @@ def _extract_facilities(records: list) -> list[dict]:
             "entity": entity,
             "operation": operation,
             "cost_code": cost_code,
-            "facility_type": "Delivery Hub",
+            "facility_type": "Pickup Hub" if is_fm else "Delivery Hub",
             "state": "",
             "active": 1,
             "source": "Excel Import",
@@ -565,6 +565,14 @@ def get_location_for_facility(facility_name: str) -> str:
         if f["facility_name"] == facility_name:
             return f["location"]
     return ""
+
+
+def get_effective_facility(facility_name: str) -> Optional[dict]:
+    """Return the effective facility record for an exact facility name (or None)."""
+    for f in _effective_facilities():
+        if f["facility_name"] == facility_name:
+            return dict(f)
+    return None
 
 
 def classify_hub(hub_name: str) -> str:

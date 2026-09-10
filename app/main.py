@@ -1,4 +1,5 @@
 import json
+import os
 import secrets
 from datetime import datetime
 from pathlib import Path
@@ -67,12 +68,14 @@ def _count_candidates():
 async def dashboard(request: Request):
     counts = _count_candidates()
     stats = database.dashboard_stats()
+    pair_count = len(database.list_generation_pairs(limit=100))
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "candidates": counts,
             "stats": stats,
+            "pair_count": pair_count,
             "nav_active": "dashboard",
         },
     )
@@ -94,6 +97,7 @@ async def manual_entry_page(request: Request, edit: Optional[int] = None):
             "rules_json": rules_json,
             "edit_candidate": edit_candidate,
             "edit_id": edit,
+            "recruiter_name": generation.get_default_recruiter_name(),
         },
     )
 
@@ -123,6 +127,27 @@ def _attach_documents(candidate_id: int, source_files) -> None:
             })
 
 
+def _backend_fields(data: dict) -> dict:
+    """Extract the backend-only candidate fields, normalized conservatively.
+
+    Empty results stay empty (the review screen resolves them); nothing is
+    invented here. Used by save-draft / confirm / approve payloads.
+    """
+    doj, _ = rules.normalize_doj(data.get("doj", ""))
+    gender, _ = rules.normalize_gender(data.get("gender", ""))
+    pin, _ = rules.normalize_pin_code(data.get("pin_code", ""))
+    father, _ = rules.normalize_father_name(data.get("father_name", ""))
+    uan, _ = rules.normalize_uan(data.get("uan_no", ""))
+    return {
+        "doj": doj,
+        "recruiter_name": str(data.get("recruiter_name", "") or "").strip(),
+        "gender": gender,
+        "pin_code": pin,
+        "father_name": father,
+        "uan_no": uan,
+    }
+
+
 @app.post("/api/save-draft")
 async def save_draft(request: Request):
     data = await request.json()
@@ -148,6 +173,7 @@ async def save_draft(request: Request):
             "dob": data.get("dob", ""),
             "address": data.get("address", ""),
             "status": "draft",
+            **_backend_fields(data),
         })
         database.record_candidate_event(edit_id, "Manual Review",
                                         "Draft updated and saved.")
@@ -172,6 +198,7 @@ async def save_draft(request: Request):
         "dob": data.get("dob", ""),
         "address": data.get("address", ""),
         "status": "draft",
+        **_backend_fields(data),
     })
     draft_files = data.get("source_files")
     if not draft_files and data.get("aadhaar_filename"):
@@ -226,6 +253,7 @@ async def confirm_candidate(request: Request):
             "dob": data.get("dob", ""),
             "address": data.get("address", ""),
             "status": "ready",
+            **_backend_fields(data),
         })
         if updated:
             _attach_documents(edit_id, data.get("source_files") or [])
@@ -253,6 +281,7 @@ async def confirm_candidate(request: Request):
         "address": data.get("address", ""),
         "migrant": data.get("migrant", "No"),
         "status": "ready",
+        **_backend_fields(data),
     })
     source_files = data.get("source_files") or (data.get("aadhaar_filename") and [data.get("aadhaar_filename")]) or []
     _attach_documents(cid, source_files)
@@ -311,10 +340,27 @@ async def batch_review_page(request: Request, batch_id: int = 1):
             "counts": counts,
             "batch_id": batch_id,
             "template_configured": generation.template_is_configured(),
+            "backend_template_configured": generation.template_backend_is_configured(),
+            "recruiter_name": generation.get_default_recruiter_name(),
             "output_base_dir": str(generation.get_output_base_dir()),
             "generated_files": database.list_generated_files(batch_id),
+            "backend_blocking": _backend_blocking_count(batch),
         },
     )
+
+
+def _backend_blocking_count(batch) -> int:
+    """Number of validated candidates that would block the backend workbook."""
+    try:
+        validated = generation.validate_candidates(batch)
+        enriched = validated.get("rows", [])
+        # Backend fields (recruiter/DOJ/gender/PIN/Aadhaar/DOB/address) live on
+        # the candidate DB record, not the enriched row — look up by full dict.
+        by_id = {c["candidate_id"]: c for c in batch}
+        result = generation.build_backend_rows(enriched, by_id)
+        return len([msgs for msgs in result.get("problems", {}).values() if msgs])
+    except Exception:
+        return 0
 
 
 @app.post("/api/remove-candidate/{candidate_id}")
@@ -349,6 +395,33 @@ async def candidates_page(request: Request, search: str = ""):
 @app.get("/api/candidates")
 async def api_candidates(search: str = ""):
     return JSONResponse(database.search_candidates(search))
+
+
+@app.get("/api/candidates/export-selected")
+async def api_export_selected_candidates(ids: str = ""):
+    """Export selected candidates' SAFE fields as CSV (no Aadhaar/address).
+
+    Registered BEFORE the dynamic /api/candidates/{candidate_id} route so the
+    literal "export-selected" path is never parsed as a candidate id.
+    """
+    ids_list = [int(i) for i in ids.split(",") if i.strip().lstrip("-").isdigit()]
+    rows = database.get_candidates_safe(ids_list)
+    fields = ["candidate_id", "name", "mobile", "entity", "operation", "cost_code",
+              "designation", "facility_name", "location_code", "salary",
+              "salary_display", "status", "batch_id", "portal_status"]
+    import csv
+    import io
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for r in rows:
+        writer.writerow(r)
+    from fastapi.responses import Response
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=selected_candidates.csv"},
+    )
 
 
 # ── Candidate Detail (read-first page) ───────────────────────────────────────
@@ -1331,6 +1404,15 @@ async def api_saved_views(page: str = "candidates"):
     return JSONResponse({"ok": True, "views": views})
 
 
+@app.get("/api/saved-views/{view_id}")
+async def api_saved_view_get(view_id: int):
+    """Fetch one saved view (view_def) so the UI can apply the stored filter."""
+    view = database.get_saved_view(view_id)
+    if view is None:
+        return JSONResponse({"ok": False, "error": "View not found."}, status_code=404)
+    return JSONResponse({"ok": True, **view})
+
+
 @app.post("/api/saved-views")
 async def api_create_saved_view(request: Request):
     data = await request.json() or {}
@@ -1413,36 +1495,13 @@ async def api_candidates_bulk_action(request: Request):
                          "errors": errors})
 
 
-@app.get("/api/candidates/export-selected")
-async def api_export_selected_candidates(ids: str = ""):
-    """Export selected candidates' SAFE fields as CSV (no Aadhaar/address)."""
-    ids_list = [int(i) for i in ids.split(",") if i.strip().lstrip("-").isdigit()]
-    rows = database.get_candidates_safe(ids_list)
-    fields = ["candidate_id", "name", "mobile", "entity", "operation", "cost_code",
-              "designation", "facility_name", "location_code", "salary",
-              "salary_display", "status", "batch_id", "portal_status"]
-    import csv
-    import io
-    buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
-    writer.writeheader()
-    for r in rows:
-        writer.writerow(r)
-    from fastapi.responses import Response
-    return Response(
-        content=buf.getvalue(),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=selected_candidates.csv"},
-    )
-
-
 # ── Phase 6: Candidate review quick actions ──────────────────────────────────
 # Approve reuses the SAME backend validation the form does (never bypasses it).
 # Mark Review / Add to Batch only flip safe status/batch fields.
 
 
 @app.post("/api/candidates/{candidate_id}/approve")
-async def api_approve_candidate(candidate_id: int):
+async def api_approve_candidate(candidate_id: int, request: Request):
     candidate = database.get_candidate(candidate_id)
     if candidate is None:
         return JSONResponse({"ok": False, "error": "Candidate not found."},
@@ -1464,6 +1523,23 @@ async def api_approve_candidate(candidate_id: int):
     errors = rules.validate_candidate(payload)
     if errors:
         return JSONResponse({"ok": False, "errors": errors}, status_code=422)
+
+    # Persist optional backend-field overrides sent by the review workspace
+    # (recruiter, DOJ, gender, PIN, father name, UAN). Values that are present
+    # replace the candidate's stored values; absent values are left untouched.
+    overrides = {}
+    try:
+        data = await request.json()
+    except Exception:  # noqa: BLE001
+        data = {}
+    if data:
+        fields = _backend_fields(data)
+        for key in ("doj", "recruiter_name", "gender", "pin_code", "father_name", "uan_no"):
+            if key in data and str(data.get(key, "")).strip():
+                overrides[key] = fields.get(key, data.get(key, ""))
+    if overrides:
+        database.update_candidate(candidate_id, overrides)
+
     database.update_candidate(candidate_id, {"status": "ready"})
     database.record_candidate_event(candidate_id, "Approved",
                                     "Candidate approved via review workspace.")
@@ -1686,7 +1762,11 @@ async def validation_history():
 async def smart_upload_page(request: Request):
     return templates.TemplateResponse(
         "smart_upload.html",
-        {"request": request, "rules": rules.get_rules_for_frontend()},
+        {
+            "request": request,
+            "rules": rules.get_rules_for_frontend(),
+            "recruiter_name": generation.get_default_recruiter_name(),
+        },
     )
 
 
@@ -1832,12 +1912,14 @@ async def api_counts():
 
 @app.get("/api/generate-preview")
 async def generate_preview(batch_id: int):
-    """Return a preview summary for the Generate Onboarding Excel dialog.
+    """Return a preview summary for the Generate Onboarding Files dialog.
 
     Only Ready candidates are eligible; Draft / Needs Attention / invalid
-    candidates are shown as excluded.
+    candidates are shown as excluded. Both output files are previewed.
     """
     template_ok = generation.template_is_configured()
+    backend_tpl_ok = generation.template_backend_is_configured()
+    recruiter_name = generation.get_default_recruiter_name()
     candidates = database.get_batch_candidates(batch_id)
     ready = [c for c in candidates if (c.get("status") or "").lower() == "ready"]
     others = [c for c in candidates if (c.get("status") or "").lower() != "ready"]
@@ -1846,9 +1928,17 @@ async def generate_preview(batch_id: int):
     valid_ids = {r["candidate_id"] for r in vres["rows"]}
     invalid_ready = [c for c in ready if c["candidate_id"] not in valid_ids]
 
+    # Backend readiness of the valid candidates (blocks the pair when missing).
+    candidates_by_id = {c["candidate_id"]: c for c in ready}
+    backend = generation.build_backend_rows(vres["rows"], candidates_by_id)
+    backend_blocking = {cid: msgs for cid, msgs in backend["problems"].items() if msgs}
+
     now = datetime.now()
+    ts = generation.build_pair_timestamp(now)
     return JSONResponse({
         "template_configured": template_ok,
+        "backend_template_configured": backend_tpl_ok,
+        "recruiter_name": recruiter_name,
         "batch_id": batch_id,
         "ready_count": len(ready),
         "included_count": len(vres["rows"]),
@@ -1857,9 +1947,13 @@ async def generate_preview(batch_id: int):
             c["candidate_id"]: generation.validate_candidates([c])["errors"].get(c["candidate_id"], [])
             for c in others
         } | {c: vres["errors"][c] for c in vres["errors"]},
+        "backend_blocking": backend_blocking,
+        "backend_problem_count": len(backend_blocking),
         "output_folder": str(generation.get_output_base_dir()),
-        "filename_preview": generation.build_filename(batch_id, now),
-        "message": ("" if template_ok else "Self Onboarding Template is not configured.") +
+        "filename_preview": generation.self_onboarding_filename(ts),
+        "backend_filename_preview": generation.backend_filename(ts),
+        "message": ("" if template_ok and backend_tpl_ok
+                    else "One or both templates are not configured.") +
                    ("" if vres["rows"] else " No Ready candidates passed validation."),
     })
 
@@ -1870,6 +1964,17 @@ async def generate_excel(request: Request):
     batch_id = int(data.get("batch_id", 1))
     only_ready = bool(data.get("only_ready", True))
     result = generation.generate_batch_excel(batch_id, only_ready=only_ready)
+    status_code = 200 if result.get("success") else 422
+    return JSONResponse(result, status_code=status_code)
+
+
+@app.post("/api/generate-onboarding-pair")
+async def generate_onboarding_pair(request: Request):
+    """Generate BOTH workbooks (Self-Onboarding + TeamHR Backend Mail) for a batch."""
+    data = await request.json() or {}
+    batch_id = int(data.get("batch_id", 1))
+    only_ready = bool(data.get("only_ready", True))
+    result = generation.generate_onboarding_pair(batch_id, only_ready=only_ready)
     status_code = 200 if result.get("success") else 422
     return JSONResponse(result, status_code=status_code)
 
@@ -1886,12 +1991,116 @@ async def settings_output_set(request: Request):
     return JSONResponse({"output_base_dir": base})
 
 
+@app.get("/api/recruiter-profile")
+async def recruiter_profile_get():
+    """Current default recruiter profile (name + first-run needs-set flag)."""
+    profile = generation.get_recruiter_profile()
+    name = profile.get("name", "")
+    return JSONResponse({
+        "recruiter_name": name,
+        "needs_setup": not bool(name),
+    })
+
+
+@app.post("/api/recruiter-profile")
+async def recruiter_profile_set(request: Request):
+    """Save the default recruiter name (no other personal data stored)."""
+    data = await request.json() or {}
+    name = generation.save_recruiter_profile(data.get("recruiter_name", ""))
+    return JSONResponse({"recruiter_name": name, "needs_setup": not bool(name)})
+
+
+@app.get("/api/generated-pairs")
+async def generated_pairs(limit: int = 20):
+    """List onboarding pairs (Self-Onboarding + Backend Mail) newest first."""
+    pairs = database.list_generation_pairs(limit=limit)
+    # Never leak full Aadhaar through the API — filenames/paths only.
+    for p in pairs:
+        for key in ("self_onboarding_file_id_details", "backend_mail_file_id_details"):
+            details = p.get(key)
+            if details is None:
+                continue
+            p[key] = {
+                "file_id": details["file_id"],
+                "filename": details["filename"],
+                "file_path": details["file_path"],
+                "candidate_count": details["candidate_count"],
+                "generated_at": details["generated_at"],
+            }
+    return JSONResponse({"pairs": pairs})
+
+
+@app.post("/api/generated/open-file")
+async def generated_open_file(request: Request):
+    """Open a generated workbook in the default viewer (manual action)."""
+    data = await request.json() or {}
+    file_id = int(data.get("file_id") or 0)
+    gf = database.get_generated_file(file_id) if file_id else None
+    if gf is None:
+        return JSONResponse({"ok": False, "error": "Generated file not found."},
+                            status_code=404)
+    path = Path(gf["file_path"])
+    if not path.exists():
+        return JSONResponse({"ok": False, "error": "File no longer exists on disk."},
+                            status_code=404)
+    _open_path(path)
+    return JSONResponse({"ok": True, "filename": gf["filename"]})
+
+
+@app.post("/api/generated/open-folder")
+async def generated_open_folder(request: Request):
+    """Open the containing folder of a generated workbook in Explorer."""
+    data = await request.json() or {}
+    file_id = int(data.get("file_id") or 0)
+    folder = str(data.get("folder", "") or "")
+    if not folder and file_id:
+        gf = database.get_generated_file(file_id)
+        if gf:
+            folder = str(Path(gf["file_path"]).parent)
+    if not folder or not Path(folder).is_dir():
+        return JSONResponse({"ok": False, "error": "Folder does not exist."},
+                            status_code=404)
+    _open_path(Path(folder))
+    return JSONResponse({"ok": True, "folder": folder})
+
+
+def _open_path(path: Path) -> None:
+    """Open a file or folder with the OS default handler (best-effort)."""
+    try:
+        import subprocess
+        subprocess.Popen(["explorer", str(path)])
+    except Exception:  # noqa: BLE001
+        try:
+            os.startfile(str(path))  # noqa: S606 - local dev convenience
+        except Exception:  # noqa: BLE001
+            pass
+
+
 @app.get("/api/generated")
 async def generated_files(batch_id: Optional[int] = None):
     files = database.list_generated_files(batch_id)
     # keep sensitive fields out of API responses for the mirror
     mirror = database.get_daily_master_mirror()
     return JSONResponse({"files": files, "daily_master": mirror})
+
+
+@app.get("/generated-files", response_class=HTMLResponse)
+async def generated_files_page(request: Request):
+    """Generated Files page: onboarding pairs shown together with actions."""
+    pairs = database.list_generation_pairs(limit=50)
+    legacy = [
+        f for f in database.list_generated_files(limit=100)
+        if not f.get("generation_pair_id")
+    ]
+    return templates.TemplateResponse(
+        "generated_files.html",
+        {
+            "request": request,
+            "pairs": pairs,
+            "legacy_files": legacy,
+            "nav_active": "generated_files",
+        },
+    )
 
 
 # ── API: eSampark Portal (Stage 4) ──────────────────────────────────────────

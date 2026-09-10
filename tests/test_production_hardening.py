@@ -690,9 +690,11 @@ def test_backup_folder_unwritable():
 
 
 def test_uat_critical_filter_is_subset():
-    """UAT critical ids are a non-empty subset of the full 172-case catalog."""
+    """UAT critical ids are a non-empty subset of the full 183-case catalog."""
     from app import uat_catalog
-    assert uat_catalog.UAT_TOTAL == 172
+    # Updated 172 -> 183 when onboarding-pair UAT cases (F16-F24, N08-N09) were
+    # added for the Self-Onboarding + TeamHR Backend workbook generation.
+    assert uat_catalog.UAT_TOTAL == 183
     assert uat_catalog.UAT_CRITICAL_COUNT > 0
     assert uat_catalog.UAT_CRITICAL_COUNT < uat_catalog.UAT_TOTAL
     # Every critical id must exist in the catalog lookup.
@@ -725,10 +727,10 @@ def test_uat_page_renders_critical_filter():
     assert 'data-status="NOT_TESTED"' in r.text
     assert 'data-status="PASS"' not in r.text
     assert "NOT_TESTED" in r.text
-    # All 172 test rows present.
+    # All 183 test rows present.
     import re
     tids = re.findall(r'data-tid="([A-Z]\d{2})"', r.text)
-    assert len(set(tids)) == 172
+    assert len(set(tids)) == 183
 
 
 def test_release_readiness_uses_allowed_status():

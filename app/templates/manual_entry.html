@@ -272,6 +272,49 @@
                 </div>
             </section>
 
+            <section class="form-section" aria-label="Onboarding and backend mail">
+                <div class="section-header">
+                    <div class="section-num">7</div>
+                    <div>
+                        <h2 class="section-title">Onboarding &amp; Backend Mail</h2>
+                        <p class="section-desc">Used by both generated workbooks. Date of Joining, Recruiter, Gender (Aadhaar only), PIN and UAN are required/handled here.</p>
+                    </div>
+                </div>
+                <div class="field-group">
+                    <label for="recruiterNameInput">Recruiter Name</label>
+                    <input type="text" id="recruiterNameInput" class="form-input" autocomplete="off" placeholder="Default from Settings">
+                    <div class="field-hint" id="recruiterNameHint">Used in the TeamHR Backend Mail workbook</div>
+                </div>
+                <div class="field-group">
+                    <label for="dojInput">Date of Joining</label>
+                    <input type="text" id="dojInput" class="form-input" autocomplete="off" placeholder="DD/MM/YYYY">
+                    <div class="field-error" id="dojError" style="display:none;"></div>
+                </div>
+                <div class="field-group">
+                    <label for="genderInput">Gender</label>
+                    <select id="genderInput" class="form-input" autocomplete="off">
+                        <option value=""></option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Transgender">Transgender</option>
+                    </select>
+                    <div class="field-hint">From Aadhaar only</div>
+                </div>
+                <div class="field-group">
+                    <label for="fatherNameInput">Father&rsquo;s Name</label>
+                    <input type="text" id="fatherNameInput" class="form-input" autocomplete="off" placeholder="Optional — S/O, D/O or C/O">
+                </div>
+                <div class="field-group">
+                    <label for="pinCodeInput">Pin Code</label>
+                    <input type="text" id="pinCodeInput" class="form-input" autocomplete="off" placeholder="6-digit PIN">
+                    <div class="field-error" id="pinCodeError" style="display:none;"></div>
+                </div>
+                <div class="field-group">
+                    <label for="uanInput">UAN No</label>
+                    <input type="text" id="uanInput" class="form-input" autocomplete="off" placeholder="Optional">
+                </div>
+            </section>
+
             <div class="form-actions">
                 <div class="btn-row">
                     <button type="button" class="btn btn-primary" id="btnReview">Review Candidate</button>
@@ -347,6 +390,30 @@
                         <span class="review-label">Migrant</span>
                         <span class="review-value" id="rvMigrant">No</span>
                     </div>
+                    <div class="review-field">
+                        <span class="review-label">Recruiter</span>
+                        <span class="review-value" id="rvRecruiter">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Date of Joining</span>
+                        <span class="review-value" id="rvDoj">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Gender</span>
+                        <span class="review-value" id="rvGender">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Father&rsquo;s Name</span>
+                        <span class="review-value" id="rvFather">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">Pin Code</span>
+                        <span class="review-value" id="rvPin">&mdash;</span>
+                    </div>
+                    <div class="review-field">
+                        <span class="review-label">UAN No</span>
+                        <span class="review-value" id="rvUan">&mdash;</span>
+                    </div>
                 </div>
                 <div class="review-actions">
                     <button type="button" class="btn btn-secondary" id="btnBackToEdit">Back to Edit</button>
@@ -376,6 +443,7 @@
         var RULES_DATA = {{ rules_json | safe }};
         var EDIT_CANDIDATE = {{ edit_candidate | tojson }};
         var EDIT_ID = {{ edit_id | tojson }};
+        var DEFAULT_RECRUITER = {{ recruiter_name | tojson }};
     </script>
     <script src="/static/manual_entry.js"></script>
 </body>

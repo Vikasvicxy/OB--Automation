@@ -24,6 +24,7 @@
         .hist-field{font-weight:600;color:var(--accent-blue);text-transform:capitalize}
         .kbd{display:inline-block;border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:0.72rem;background:var(--bg-card);color:var(--text-secondary);margin-right:4px}
         .cd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+        .cd-grid .cd-field-full{grid-column:1 / -1;word-break:break-word}
         .generated-table{margin-top:8px}
     </style>
 </head>
@@ -164,6 +165,14 @@
                         <div class="cd-field"><div class="cd-label">Location</div><div class="cd-value">{{ candidate.location_code or '—' }}</div></div>
                         <div class="cd-field"><div class="cd-label">Salary</div><div class="cd-value">{{ candidate.salary_display or candidate.salary or '—' }}</div></div>
                         <div class="cd-field"><div class="cd-label">Migrant</div><div class="cd-value">{{ candidate.migrant or 'No' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Date of Joining</div><div class="cd-value">{{ candidate.doj or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Recruiter</div><div class="cd-value">{{ candidate.recruiter_name or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Gender</div><div class="cd-value">{{ candidate.gender or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Father&rsquo;s Name</div><div class="cd-value">{{ candidate.father_name or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">Pin Code</div><div class="cd-value">{{ candidate.pin_code or '—' }}</div></div>
+                        <div class="cd-field"><div class="cd-label">UAN No</div><div class="cd-value">{{ candidate.uan_no or '—' }}</div></div>
+                        <div class="cd-field cd-field-full"><div class="cd-label">Aadhaar Number</div><div class="cd-value">{{ candidate.aadhaar_number or '—' }}</div></div>
+                        <div class="cd-field cd-field-full"><div class="cd-label">Address</div><div class="cd-value">{{ candidate.address or '—' }}</div></div>
                         <div class="cd-field"><div class="cd-label">Portal Status</div><div class="cd-value">{{ candidate.portal_status or '—' }}</div></div>
                         <div class="cd-field"><div class="cd-label">Portal Remarks</div><div class="cd-value">{{ candidate.portal_remarks or '—' }}</div></div>
                         <div class="cd-field"><div class="cd-label">Created</div><div class="cd-value">{{ candidate.created_date or '—' }} {{ candidate.created_time or '' }}</div></div>
@@ -191,6 +200,7 @@
                                     {% if f.portal_result_path %}
                                     <a href="/api/generated-file/{{ f.file_id }}/result" class="btn btn-sm btn-outline">View Result</a>
                                     {% endif %}
+                                    <button type="button" class="btn btn-sm btn-outline" data-open-file="{{ f.file_id }}">Open</button>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -404,6 +414,26 @@
 
         renderDocTabs();
         renderDoc();
+
+        /* ── Open generated file (manual action) ─────────────── */
+        document.querySelectorAll("[data-open-file]").forEach(function (b) {
+            b.addEventListener("click", function () {
+                var fid = b.getAttribute("data-open-file");
+                if (!fid) return;
+                fetch("/api/generated/open-file", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file_id: fid })
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (!d.ok && window.showToast) window.showToast(d.error || "Could not open file", "error");
+                })
+                .catch(function () {
+                    if (window.showToast) window.showToast("Network error", "error");
+                });
+            });
+        });
     })();
     </script>
 </body>

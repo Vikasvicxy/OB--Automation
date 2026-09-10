@@ -20,8 +20,8 @@
         {% include 'partials/_searchbar.html' %}
         <header class="topbar">
             <div>
-                <h1 class="page-title">Smart Upload</h1>
-                <p class="page-subtitle">Upload screenshots/Aadhaar/PDF &mdash; extract candidate details for review</p>
+                <h1 class="page-title">New Onboarding</h1>
+                <p class="page-subtitle">Paste (Ctrl+V), upload or drag screenshots / Aadhaar / PDF &mdash; review, approve, then generate both workbooks</p>
             </div>
         </header>
 
@@ -37,7 +37,7 @@
         <section id="uploadSection">
             <div class="smart-upload-zone" id="uploadZone" role="button" tabindex="0" aria-label="Upload documents">
                 <div class="smart-upload-icon">&#8682;</div>
-                <h2>Drop files here or click to browse</h2>
+                <h2>Paste (Ctrl+V), drop files here or click to browse</h2>
                 <p class="smart-upload-supported">Accepts .png, .jpg, .jpeg, .pdf &mdash; up to one candidate's documents at a time</p>
                 <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.pdf" style="display:none">
             </div>
@@ -167,6 +167,71 @@
                     <div class="evidence-details" id="evSalaryDetail" style="display:none"></div>
                 </div>
 
+                <!-- Recruiter Name -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfRecruiter">Recruiter Name</label>
+                    <input type="text" id="rfRecruiter" class="global-search" style="width:100%" placeholder="From Settings otherwise">
+                    <div class="rf-meta">
+                        <span class="badge-readonly">Used in Backend Mail</span>
+                    </div>
+                </div>
+
+                <!-- Date of Joining -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfDoj">Date of Joining</label>
+                    <input type="text" id="rfDoj" class="global-search" style="width:100%" placeholder="DD/MM/YYYY">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfDoj"></span>
+                        <span class="rf-source" id="srcDoj"></span>
+                        <button type="button" class="evidence-toggle" id="evDoj" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evDojDetail" style="display:none"></div>
+                </div>
+
+                <!-- Gender -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfGender">Gender</label>
+                    <select id="rfGender" class="global-search" style="width:100%">
+                        <option value=""></option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Transgender">Transgender</option>
+                    </select>
+                    <div class="rf-meta">
+                        <span class="text-small">From Aadhaar only</span>
+                    </div>
+                </div>
+
+                <!-- Father Name -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfFatherName">Father&rsquo;s Name</label>
+                    <input type="text" id="rfFatherName" class="global-search" style="width:100%" placeholder="S/O, D/O or C/O" >
+                    <div class="rf-meta">
+                        <span class="badge-readonly">Optional</span>
+                    </div>
+                </div>
+
+                <!-- Pin Code -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfPinCode">Pin Code</label>
+                    <input type="text" id="rfPinCode" class="global-search" style="width:100%" placeholder="6-digit PIN">
+                    <div class="rf-meta">
+                        <span class="cf-badge" id="cfPinCode"></span>
+                        <span class="rf-source" id="srcPinCode"></span>
+                        <button type="button" class="evidence-toggle" id="evPinCode" style="display:none">Why?</button>
+                    </div>
+                    <div class="evidence-details" id="evPinCodeDetail" style="display:none"></div>
+                </div>
+
+                <!-- UAN -->
+                <div class="rf-field">
+                    <label class="rf-label" for="rfUan">UAN No</label>
+                    <input type="text" id="rfUan" class="global-search" style="width:100%" placeholder="Optional">
+                    <div class="rf-meta">
+                        <span class="badge-readonly">Optional</span>
+                    </div>
+                </div>
+
                 <!-- Cost Code -->
                 <div class="rf-field">
                     <label class="rf-label" for="rfCostCode">Cost Code</label>
@@ -208,7 +273,8 @@
             <div class="rf-actions">
                 <button type="button" class="evidence-toggle" id="btnCancelReview">Cancel</button>
                 <div class="rf-actions-spacer"></div>
-                <button type="button" class="btn btn-primary" id="btnSaveDraft">Save Draft</button>
+                <button type="button" class="btn btn-secondary" id="btnSaveDraft">Save Draft</button>
+                <button type="button" class="btn btn-primary" id="btnApprove">Save &amp; Approve</button>
             </div>
         </section>
     </main>
@@ -254,6 +320,12 @@
                 operation: d.operation || "",
                 team: d.team || "",
                 facility_type: document.getElementById("rfFacilityType").value.trim(),
+                recruiter_name: document.getElementById("rfRecruiter").value.trim(),
+                doj: document.getElementById("rfDoj").value.trim(),
+                gender: document.getElementById("rfGender").value.trim(),
+                father_name: document.getElementById("rfFatherName").value.trim(),
+                pin_code: document.getElementById("rfPinCode").value.trim(),
+                uan_no: document.getElementById("rfUan").value.trim(),
                 batch_id: d.batch_id || 1,
                 candidate_number: d.candidate_number || 1,
                 candidateNum: d.candidate_number || 1
@@ -298,9 +370,11 @@
             draftSaveTimer = setTimeout(saveServerDraft, 1500);
         }
 
-        ["rfName", "rfMobile", "rfFacility", "rfRole", "rfSalary", "rfCostCode"].forEach(function (id) {
+        ["rfName", "rfMobile", "rfFacility", "rfRole", "rfSalary", "rfCostCode",
+             "rfRecruiter", "rfDoj", "rfGender", "rfFatherName", "rfPinCode", "rfUan"].forEach(function (id) {
             var el = document.getElementById(id);
             if (el) el.addEventListener("input", scheduleDraftSave);
+            if (el) el.addEventListener("change", scheduleDraftSave);
         });
 
         fetch("/api/drafts?draft_type=smart_upload")
@@ -320,9 +394,11 @@
         document.getElementById("btnRecover").addEventListener("click", function () {
             if (!serverDraft) { document.getElementById("recoveryBanner").style.display = "none"; return; }
             var p = serverDraft.safe_payload || {};
-            var set = function (id, val) { if (val) document.getElementById(id).value = val; };
+            var set = function (id, val) { if (val && document.getElementById(id)) document.getElementById(id).value = val; };
             set("rfName", p.name); set("rfMobile", p.mobile); set("rfFacility", p.facility);
             set("rfRole", p.role); set("rfCostCode", p.cost_code);
+            set("rfRecruiter", p.recruiter_name); set("rfDoj", p.doj); set("rfGender", p.gender);
+            set("rfFatherName", p.father_name); set("rfPinCode", p.pin_code); set("rfUan", p.uan_no);
             var d = extractionData || {};
             d.entity = p.entity || d.entity || "";
             d.operation = p.operation || d.operation || "";
@@ -372,6 +448,38 @@
         fileInput.addEventListener("change", function() {
             addFiles(fileInput.files);
             fileInput.value = "";
+        });
+
+        /* ── Paste (Ctrl+V) support ──────────────────────────────────────
+           Clipboard images become candidate files; clipboard files are taken
+           directly. Only active on the upload screen (never while typing in
+           the review form). */
+        window.addEventListener("paste", function(e) {
+            if (reviewSection.style.display !== "none") return;
+            if (extractNotice.style.display !== "none") return;
+            var items = (e.clipboardData || {}).items || [];
+            var added = 0;
+            for (var i = 0; i < items.length; i++) {
+                var it = items[i];
+                if (it.kind === "file") {
+                    var f = it.getAsFile();
+                    if (!f) continue;
+                    var ext = (f.name || "").split(".").pop().toLowerCase();
+                    if (!ext && f.type && f.type.indexOf("image/") === 0) {
+                        ext = "png";
+                    }
+                    f.name = (f.name && f.name.indexOf(".") !== -1) ? f.name : ("clipboard-" + Date.now() + "." + ext);
+                    if (["png","jpg","jpeg","pdf"].indexOf(ext) === -1 && f.type.indexOf("image/") !== 0) continue;
+                    files.push(f);
+                    added++;
+                }
+            }
+            if (added) {
+                renderFileGrid();
+                if (typeof showToast === "function") {
+                    showToast("Pasted " + added + " file(s). Click Extract & Review.", "info");
+                }
+            }
         });
 
         function addFiles(fileList) {
@@ -528,9 +636,22 @@
             setField("rfDob", data.dob);
             setField("rfFacility", data.facility);
             setField("rfRole", data.role);
-            setField("rfSalaryDisplay", data.salary);
             setField("rfCostCode", data.cost_code);
             setField("rfAddress", data.address);
+
+            setField("rfDoj", data.doj);
+            setField("rfGender", data.gender);
+            setField("rfFatherName", data.father_name);
+            setField("rfPinCode", data.pin_code);
+            setField("rfUan", data.uan_no);
+
+            var recruiterInput = document.getElementById("rfRecruiter");
+            if (!recruiterInput.value.trim() && data.recruiter_name) {
+                recruiterInput.value = data.recruiter_name;
+            }
+            if (!recruiterInput.value.trim()) {
+                recruiterInput.value = "{{ recruiter_name | default('', true) | e }}";
+            }
 
             document.getElementById("rfAadhaar").value = data.aadhaar_masked || "XXXX XXXX ?";
 
@@ -556,12 +677,15 @@
             attachEvidence("evRole", "evRoleDetail", data.evidence, "role");
             attachEvidence("evSalary", "evSalaryDetail", data.evidence, "salary");
             attachEvidence("evAddress", "evAddressDetail", data.evidence, "address");
+            attachEvidence("evDoj", "evDojDetail", data.evidence, "doj");
+            attachEvidence("evPinCode", "evPinCodeDetail", data.evidence, "pin_code");
 
             reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
         }
 
         function setField(inputId, field) {
             var input = document.getElementById(inputId);
+            if (!input) return;
             var cfBadge = document.getElementById("cf" + inputId.replace("rf", ""));
             var srcEl = document.getElementById("src" + inputId.replace("rf", ""));
 
@@ -646,10 +770,10 @@
         document.getElementById("btnBackToUpload").addEventListener("click", backToUpload);
         document.getElementById("btnCancelReview").addEventListener("click", backToUpload);
 
-        /* ── Save Draft ─────────────────────────────────────────────────── */
-        document.getElementById("btnSaveDraft").addEventListener("click", function() {
+        /* ── Save Draft / Save & Approve ────────────────────────────────── */
+        function buildPayload() {
             var d = extractionData || {};
-            var payload = {
+            return {
                 name: document.getElementById("rfName").value.trim(),
                 mobile: document.getElementById("rfMobile").value.trim(),
                 dob: document.getElementById("rfDob").value.trim(),
@@ -665,13 +789,22 @@
                 operation: d.operation || "",
                 team: d.team || "",
                 facility_type: document.getElementById("rfFacilityType").value.trim(),
+                recruiter_name: document.getElementById("rfRecruiter").value.trim(),
+                doj: document.getElementById("rfDoj").value.trim(),
+                gender: document.getElementById("rfGender").value.trim(),
+                father_name: document.getElementById("rfFatherName").value.trim(),
+                pin_code: document.getElementById("rfPinCode").value.trim(),
+                uan_no: document.getElementById("rfUan").value.trim(),
                 aadhaar_number: d.aadhaar_number || "",
                 batch_id: d.batch_id || 1,
                 candidate_number: d.candidate_number || 1,
                 source_files: (d.source_files || []).map(function(f) { return f.filename; }),
                 aadhaar_filename: ""
             };
+        }
 
+        function applyAadhaarFilename(payload) {
+            var d = extractionData || {};
             var sf = d.source_files || [];
             for (var i = 0; i < sf.length; i++) {
                 var fn = (sf[i].filename || "").toLowerCase();
@@ -680,7 +813,11 @@
                     break;
                 }
             }
+            return payload;
+        }
 
+        document.getElementById("btnSaveDraft").addEventListener("click", function() {
+            var payload = applyAadhaarFilename(buildPayload());
             var btn = document.getElementById("btnSaveDraft");
             btn.disabled = true;
             btn.textContent = "Saving\u2026";
@@ -708,6 +845,41 @@
                 btn.disabled = false;
                 btn.textContent = "Save Draft";
                 if (typeof showToast === "function") showToast("Save failed: " + err, "error");
+            });
+        });
+
+        document.getElementById("btnApprove").addEventListener("click", function() {
+            var payload = applyAadhaarFilename(buildPayload());
+            var btn = document.getElementById("btnApprove");
+            btn.disabled = true;
+            btn.textContent = "Saving & Approving\u2026";
+
+            fetch("/api/confirm-candidate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                btn.disabled = false;
+                btn.textContent = "Save & Approve";
+                if (res.errors) {
+                    var msg = Object.values(res.errors).join(" | ");
+                    if (typeof showToast === "function") showToast(msg || "Approval failed. Check the required fields.", "error");
+                    return;
+                }
+                if (typeof showToast === "function") {
+                    showToast("Candidate approved (ID " + res.id + "). Generate the workbooks from Batch Review.", "success");
+                }
+                backToUpload();
+                files = [];
+                renderFileGrid();
+                clearServerDraft();
+            })
+            .catch(function(err) {
+                btn.disabled = false;
+                btn.textContent = "Save & Approve";
+                if (typeof showToast === "function") showToast("Approval failed: " + err, "error");
             });
         });
     })();

@@ -646,10 +646,11 @@ def test_full_progressive_run():
         })
     s = db.uat_get_summary(rid)
     check("total = 9", s["total"] == 9)
-    check("passed = 5", s["passed"] == 5)
+    check("passed = 6", s["passed"] == 6)
     check("failed = 2", s["failed"] == 2)
     check("blocked = 1", s["blocked"] == 1)
-    check("completion = 8/9 = 88.9%", s["completion_pct"] == 88.9)
+    check("not_tested = 0", s["not_tested"] == 0)
+    check("completion = 9/9 = 100.0%", s["completion_pct"] == 100.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

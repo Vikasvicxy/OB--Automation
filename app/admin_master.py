@@ -38,7 +38,7 @@ COST_CODE_BY_COMBO = {
 
 ENTITIES = ["Flipkart", "Myntra"]
 OPERATIONS = ["Last Mile", "First Mile"]
-FACILITY_TYPES = ["Delivery Hub"]
+FACILITY_TYPES = ["Delivery Hub", "Pickup Hub"]
 
 # Admin feature toggle. Default on for local development. No passwords/auth in
 # this stage — access control can be layered on later.
@@ -173,7 +173,9 @@ def add_facility(data: dict) -> dict:
         "entity": _norm(data.get("entity")),
         "operation": _norm(data.get("operation")),
         "cost_code": cost_code,
-        "facility_type": "Delivery Hub",
+        # Facility Type follows the operation-derived rule: First Mile = Pickup
+        # Hub, Last Mile = Delivery Hub (production workbook evidence).
+        "facility_type": "Pickup Hub" if _norm(data.get("operation")) == "First Mile" else "Delivery Hub",
         "state": _norm(data.get("state")),
         "active": 1,
         "source": "Admin",

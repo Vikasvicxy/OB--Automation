@@ -118,6 +118,15 @@ UAT_GROUPS = [
             ("F13", "Daily master Aadhaar remains masked"),
             ("F14", "Batch timeline displays"),
             ("F15", "Generated file appears on candidate detail"),
+            ("F16", "Generate Onboarding Files button present and enabled"),
+            ("F17", "Both workbooks generated as one pair"),
+            ("F18", "Backend workbook blocked until recruiter name / DOJ / gender / PIN complete"),
+            ("F19", "Self-Onboarding workbook has exact 14 columns and correct values (Team, Migrant No, LOB/Sub EKART, State KARNATAKA, Contractor; 4421 and 8751 DELIVERY_HUB, 4441 PICKUP_HUB)"),
+            ("F20", "Backend workbook has exact 16 columns and formatting (DOJ/DOB dates, Mobile/Aadhaar/UAN text, salary number)"),
+            ("F21", "Full Aadhaar appears ONLY in backend workbook (not in self-onboarding, filenames, folders, or UI lists)"),
+            ("F22", "Unique timestamped pair names; no overwrite between runs"),
+            ("F23", "Open workbook / Open folder actions work from Batch Review and Generated Files"),
+            ("F24", "Applying the pair generation again does not duplicate or overwrite the prior pair"),
         ],
     },
     {
@@ -259,6 +268,8 @@ UAT_GROUPS = [
             ("N05", "Backup status correct"),
             ("N06", "Health link works"),
             ("N07", "No dead sidebar links"),
+            ("N08", "Recruiter profile can be saved in Settings"),
+            ("N09", "Saved recruiter name appears as default in Manual Entry and Smart Upload"),
         ],
     },
 ]
@@ -275,13 +286,15 @@ UAT_TOTAL = sum(len(g["tests"]) for g in UAT_GROUPS)
 # ── Critical (highest-risk) UAT tests ────────────────────────────────────────
 # A focused subset of the full catalog covering test ids that gate release:
 # PII exposure, live-upload safety, backup/restore integrity, and generation
-# correctness. The full 172-case catalog is unchanged; this is a filter/tag only
-# and does NOT auto-mark any manual test as PASS.
+# correctness. This is a filter/tag only and does NOT auto-mark any manual
+# test as PASS.
 UAT_CRITICAL: set[str] = {
     # PII / export never leak full Aadhaar or address
     "A08", "A09", "D08", "D09", "E06", "E07", "F13", "H08", "H09", "K14",
     # Core data correctness
     "B04", "B12", "B15", "B16", "C07", "C08", "E04", "F08", "F11",
+    # Onboarding pair generation correctness and PII placement
+    "F17", "F18", "F19", "F20", "F21", "F22",
     # Backup / restore integrity
     "J04", "J08", "J09", "J12", "J13",
     # Portal safety must stay LOCKED

@@ -1014,8 +1014,14 @@
             salary: normalizeSalary(salaryInput.value),
             salary_display: salaryInput.value.trim(),
             aadhaar_number: (ocrResult && ocrResult.aadhaar_number) || (EDIT_CANDIDATE && EDIT_CANDIDATE.aadhaar_number) || "",
-            dob: (ocrResult && ocrResult.dob && ocrResult.dob.value) || "",
+            dob: (ocrResult && ocrResult.dob && ocrResult.dob.value) || (EDIT_CANDIDATE && EDIT_CANDIDATE.dob) || "",
             address: (ocrResult && ocrResult.address && ocrResult.address.value) || "",
+            recruiter_name: $("recruiterNameInput").value.trim(),
+            doj: $("dojInput").value.trim(),
+            gender: $("genderInput").value.trim(),
+            father_name: $("fatherNameInput").value.trim(),
+            pin_code: $("pinCodeInput").value.trim(),
+            uan_no: $("uanInput").value.trim(),
             migrant: "No",
             edit_id: editCandidateId
         };
@@ -1040,6 +1046,12 @@
         $("rvSalary").textContent = data.salary ? "\u20B9" + data.salary.toLocaleString("en-IN") : "\u2014";
         $("rvMigrant").textContent = "No";
         $("rvAddress").textContent = data.address || "\u2014";
+        $("rvRecruiter").textContent = data.recruiter_name || "\u2014";
+        $("rvDoj").textContent = data.doj || "\u2014";
+        $("rvGender").textContent = data.gender || "\u2014";
+        $("rvFather").textContent = data.father_name || "\u2014";
+        $("rvPin").textContent = data.pin_code || "\u2014";
+        $("rvUan").textContent = data.uan_no || "\u2014";
 
         if (isEditMode) {
             reviewTitle.textContent = "Edit Candidate #" + candidateNum;
@@ -1223,6 +1235,12 @@
             location_code: $("locationValue").value,
             salary: salaryInput.value,
             aadhaar_filename: selectedFileName,
+            recruiter_name: $("recruiterNameInput").value,
+            doj: $("dojInput").value,
+            gender: $("genderInput").value,
+            father_name: $("fatherNameInput").value,
+            pin_code: $("pinCodeInput").value,
+            uan_no: $("uanInput").value,
             candidateNum: candidateNum,
             batchId: batchId
         };
@@ -1275,6 +1293,12 @@
         }
         if (data.mobile) mobileInput.value = data.mobile;
         if (data.salary) salaryInput.value = data.salary;
+        if (data.recruiter_name) $("recruiterNameInput").value = data.recruiter_name;
+        if (data.doj) $("dojInput").value = data.doj;
+        if (data.gender) $("genderInput").value = data.gender;
+        if (data.father_name) $("fatherNameInput").value = data.father_name;
+        if (data.pin_code) $("pinCodeInput").value = data.pin_code;
+        if (data.uan_no) $("uanInput").value = data.uan_no;
         if (data.aadhaar_filename) {
             selectedFileName = data.aadhaar_filename;
             fileName.textContent = data.aadhaar_filename;
@@ -1448,6 +1472,12 @@
         if (data.candidate_name) candidateNameInput.value = data.candidate_name;
         if (data.mobile) mobileInput.value = data.mobile;
         if (data.salary) salaryInput.value = data.salary;
+        if (data.recruiter_name) $("recruiterNameInput").value = data.recruiter_name;
+        if (data.doj) $("dojInput").value = data.doj;
+        if (data.gender) $("genderInput").value = data.gender;
+        if (data.father_name) $("fatherNameInput").value = data.father_name;
+        if (data.pin_code) $("pinCodeInput").value = data.pin_code;
+        if (data.uan_no) $("uanInput").value = data.uan_no;
         if (data.aadhaar_filename) {
             selectedFileName = data.aadhaar_filename;
             fileName.textContent = data.aadhaar_filename;
@@ -1629,7 +1659,7 @@
 
     /* ── Recovery Banner (local + server-side draft) ─────────────────────── */
     function hasMeaningfulDraft(d) {
-        return d && (d.mobile || d.cost_code || d.facility || d.salary || d.candidate_name);
+        return d && (d.mobile || d.cost_code || d.facility || d.salary || d.candidate_name || d.doj || d.recruiter_name);
     }
 
     var serverDraft = null;
@@ -1700,6 +1730,12 @@
                 facility: EDIT_CANDIDATE.facility_name || "",
                 salary: EDIT_CANDIDATE.salary_display || String(EDIT_CANDIDATE.salary || ""),
                 aadhaar_filename: EDIT_CANDIDATE.aadhaar_filename || "",
+                recruiter_name: EDIT_CANDIDATE.recruiter_name || "",
+                doj: EDIT_CANDIDATE.doj || "",
+                gender: EDIT_CANDIDATE.gender || "",
+                father_name: EDIT_CANDIDATE.father_name || "",
+                pin_code: EDIT_CANDIDATE.pin_code || "",
+                uan_no: EDIT_CANDIDATE.uan_no || "",
                 candidateNum: candidateNum,
                 batchId: batchId
             }
@@ -1723,6 +1759,12 @@
     }
     mobileInput.addEventListener("input", scheduleAutoSave);
     salaryInput.addEventListener("input", scheduleAutoSave);
+    $("recruiterNameInput").addEventListener("input", scheduleAutoSave);
+    $("dojInput").addEventListener("input", scheduleAutoSave);
+    $("genderInput").addEventListener("change", scheduleAutoSave);
+    $("fatherNameInput").addEventListener("input", scheduleAutoSave);
+    $("pinCodeInput").addEventListener("input", scheduleAutoSave);
+    $("uanInput").addEventListener("input", scheduleAutoSave);
     candidateNameInput.addEventListener("input", function () {
         scheduleAutoSave();
         if (candidateNameInput.classList.contains("input-error")) {
@@ -1736,6 +1778,10 @@
     updateNavBar();
     if (!isEditMode) {
         updatePageTitle();
+        if (typeof DEFAULT_RECRUITER !== "undefined" && DEFAULT_RECRUITER) {
+            $("recruiterNameInput").value = DEFAULT_RECRUITER;
+            $("recruiterNameHint").textContent = "Default recruiter from Settings. Change per candidate if needed.";
+        }
     }
 
 })();

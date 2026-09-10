@@ -44,6 +44,11 @@ CANDIDATE_COLUMNS = [
     "address",
     "dob",
     "doj",
+    "gender",
+    "father_name",
+    "pin_code",
+    "uan_no",
+    "recruiter_name",
     "entity",
     "cost_code",
     "operation",
@@ -111,6 +116,11 @@ def init_db() -> None:
                 address         TEXT,
                 dob             TEXT,
                 doj             TEXT,
+                gender          TEXT,
+                father_name     TEXT,
+                pin_code        TEXT,
+                uan_no          TEXT,
+                recruiter_name  TEXT,
                 entity          TEXT,
                 cost_code       TEXT,
                 operation       TEXT,
@@ -148,7 +158,9 @@ def init_db() -> None:
                 candidate_count     INTEGER NOT NULL DEFAULT 0,
                 generation_status   TEXT,
                 portal_result_path  TEXT,
-                portal_failure_path TEXT
+                portal_failure_path TEXT,
+                generation_pair_id  TEXT,
+                kind                TEXT NOT NULL DEFAULT 'self_onboarding'
             );
 
             CREATE TABLE IF NOT EXISTS generation_audit (
@@ -508,6 +520,11 @@ def init_db() -> None:
             ("state", "TEXT"),
             ("excel_generated", "TEXT"),
             ("generated_file_id", "INTEGER"),
+            ("recruiter_name", "TEXT"),
+            ("father_name", "TEXT"),
+            ("pin_code", "TEXT"),
+            ("gender", "TEXT"),
+            ("uan_no", "TEXT"),
         ):
             if col not in cols:
                 conn.execute(f"ALTER TABLE candidates ADD COLUMN {col} {ddl}")
@@ -519,6 +536,8 @@ def init_db() -> None:
             ("portal_uploaded_at", "TEXT"),
             ("portal_reference", "TEXT"),
             ("portal_upload_id", "INTEGER"),
+            ("generation_pair_id", "TEXT"),
+            ("kind", "TEXT NOT NULL DEFAULT 'self_onboarding'"),
         ):
             if col not in gcols:
                 conn.execute(f"ALTER TABLE generated_files ADD COLUMN {col} {ddl}")
@@ -1353,15 +1372,18 @@ def create_generated_file(
     generation_status: str = "generated",
     portal_result_path: str = "",
     portal_failure_path: str = "",
+    kind: str = "self_onboarding",
+    generation_pair_id: str = "",
 ) -> int:
     conn = _get_connection()
     try:
         cur = conn.execute(
             "INSERT INTO generated_files (batch_id, filename, file_path, date_folder, "
             "generated_at, candidate_count, generation_status, portal_result_path, "
-            "portal_failure_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "portal_failure_path, kind, generation_pair_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (batch_id, filename, file_path, date_folder, _now(), candidate_count,
-             generation_status, portal_result_path, portal_failure_path),
+             generation_status, portal_result_path, portal_failure_path,
+             kind, generation_pair_id or None),
         )
         conn.commit()
         new_id = cur.lastrowid
@@ -1400,6 +1422,52 @@ def list_generated_files(batch_id: Optional[int] = None, limit: int = 20) -> lis
         conn.close()
 
 
+def list_generation_pairs(limit: int = 20) -> list[dict]:
+    """Return onboarding pairs (Self-Onboarding + Backend Mail) grouped by pair id."""
+    conn = _get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM generated_files WHERE generation_pair_id IS NOT NULL "
+            "ORDER BY file_id DESC LIMIT ?", (limit * 4,)
+        ).fetchall()
+        pairs: dict[str, dict] = {}
+        order: list[str] = []
+        for r in rows:
+            rec = dict(r)
+            pid = rec.get("generation_pair_id")
+            if pid and pid not in pairs:
+                pairs[pid] = {
+                    "generation_pair_id": pid,
+                    "batch_id": rec.get("batch_id"),
+                    "generated_at": rec.get("generated_at"),
+                    "self_onboarding_file_id": None,
+                    "backend_mail_file_id": None,
+                    "candidate_count": rec.get("candidate_count") or 0,
+                }
+                order.append(pid)
+            if pid in pairs:
+                if rec.get("kind") == "backend_mail":
+                    pairs[pid]["backend_mail_file_id"] = rec["file_id"]
+                else:
+                    pairs[pid]["self_onboarding_file_id"] = rec["file_id"]
+                    pairs[pid]["generated_at"] = pairs[pid].get("generated_at") or rec.get("generated_at")
+        pair_list = [pairs[p] for p in order][:limit]
+        for p in pair_list:
+            for key in ("self_onboarding_file_id", "backend_mail_file_id"):
+                fid = p.get(key)
+                p[key + "_details"] = get_generated_file(fid) if fid else None
+        return pair_list
+    finally:
+        conn.close()
+
+
+def get_generation_pair(pair_id: str) -> Optional[dict]:
+    for p in list_generation_pairs(limit=500):
+        if p["generation_pair_id"] == pair_id:
+            return p
+    return None
+
+
 def mark_candidates_generated(candidate_ids: list[int], generated_file_id: int) -> None:
     if not candidate_ids:
         return
@@ -1411,6 +1479,24 @@ def mark_candidates_generated(candidate_ids: list[int], generated_file_id: int) 
                 "WHERE candidate_id = ?",
                 (generated_file_id, cid),
             )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_candidates_generated(candidate_ids: list[int], generated_file_id: int) -> None:
+    """Mark candidates as generated (used by the onboarding pair writer)."""
+    mark_candidates_generated(candidate_ids, generated_file_id)
+
+
+def update_generated_file_generated_at(file_id: int, generated_at: str) -> None:
+    """Align a generated file's recorded timestamp (pair generation)."""
+    conn = _get_connection()
+    try:
+        conn.execute(
+            "UPDATE generated_files SET generated_at = ? WHERE file_id = ?",
+            (generated_at, file_id),
+        )
         conn.commit()
     finally:
         conn.close()

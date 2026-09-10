@@ -219,6 +219,27 @@
             {% endif %}
         </section>
 
+        {# ── 4A. RECRUITER PROFILE ────────────────────────────────────── #}
+        <section aria-label="Recruiter profile">
+            <h3 class="section-heading">Recruiter Profile</h3>
+            <div class="settings-grid">
+                <div class="settings-card">
+                    <div class="settings-card-title">Recruiter Name</div>
+                    {% if oc.get('recruiter_name') %}
+                    <div class="settings-card-status configured">{{ oc.get('recruiter_name') }}</div>
+                    {% else %}
+                    <div class="settings-card-status" style="color:var(--accent-red);">Not Set</div>
+                    {% endif %}
+                    <p class="settings-card-desc">Used as the default Recruiter Name in the TeamHR Backend Mail workbook (can be overridden per candidate).</p>
+                    <div style="display:flex;gap:8px;margin-top:10px;">
+                        <input type="text" id="recruiterName" class="form-input" style="flex:1;" placeholder="e.g. Ravi Kumar" value="{{ oc.get('recruiter_name', '') }}">
+                        <button type="button" id="btnSaveRecruiter" class="btn btn-primary">Save</button>
+                    </div>
+                    <div class="field-error" id="recruiterError" style="display:none;margin-top:4px;"></div>
+                </div>
+            </div>
+        </section>
+
         {# ── 5. PORTAL ────────────────────────────────────────────────── #}
         <section aria-label="Portal status">
             <h3 class="section-heading">eSampark Portal</h3>
@@ -363,6 +384,47 @@
         (function () {
             var btn = document.getElementById('btnReloadMasters');
             var status = document.getElementById('reloadStatus');
+
+            var btnRecruiter = document.getElementById('btnSaveRecruiter');
+            var recruiterInput = document.getElementById('recruiterName');
+            var recruiterError = document.getElementById('recruiterError');
+            if (btnRecruiter) {
+                btnRecruiter.addEventListener('click', function () {
+                    var name = recruiterInput.value.trim();
+                    if (!name) {
+                        recruiterError.textContent = 'Recruiter name is required.';
+                        recruiterError.style.display = '';
+                        return;
+                    }
+                    recruiterError.style.display = 'none';
+                    btnRecruiter.disabled = true;
+                    btnRecruiter.textContent = 'Saving\u2026';
+                    fetch('/api/recruiter-profile', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ recruiter_name: name })
+                    })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            btnRecruiter.disabled = false;
+                            btnRecruiter.textContent = 'Save';
+                            if (data.recruiter_name) {
+                                if (typeof showToast === 'function') showToast('Recruiter profile saved.', 'success');
+                                setTimeout(function () { window.location.reload(); }, 800);
+                            } else {
+                                if (typeof showToast === 'function') showToast('Could not save recruiter profile.', 'error');
+                            }
+                        })
+                        .catch(function () {
+                            btnRecruiter.disabled = false;
+                            btnRecruiter.textContent = 'Save';
+                            if (typeof showToast === 'function') showToast('Save failed.', 'error');
+                        });
+                });
+                if (recruiterInput) {
+                    recruiterInput.addEventListener('input', function () { recruiterError.style.display = 'none'; });
+                }
+            }
             if (btn) {
                 btn.addEventListener('click', function () {
                     btn.disabled = true;

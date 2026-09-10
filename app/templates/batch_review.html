@@ -93,6 +93,9 @@
                             <th>Facility</th>
                             <th>Role</th>
                             <th>Salary</th>
+                            <th>DOJ</th>
+                            <th>Recruiter</th>
+                            <th>Gender</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -107,13 +110,16 @@
                             <td>{{ (c.facility_name | default('')) or '&mdash;' | safe }}</td>
                             <td>{{ (c.designation | default('')) or '&mdash;' | safe }}</td>
                             <td>{{ (c.salary_display | default('')) or (c.salary | default('')) or '&mdash;' | safe }}</td>
+                            <td>{{ (c.doj | default('')) or '&mdash;' | safe }}</td>
+                            <td>{{ (c.recruiter_name | default('')) or '&mdash;' | safe }}</td>
+                            <td>{{ (c.gender | default('')) or '&mdash;' | safe }}</td>
                             <td style="white-space:nowrap;">
                                 <a href="/manual-entry?edit={{ c.candidate_id }}" class="btn btn-sm btn-outline">Review</a>
                                 <button class="btn btn-sm btn-danger remove-btn" data-cid="{{ c.candidate_id }}" title="Remove candidate">&times;</button>
                             </td>
                         </tr>
                         {% else %}
-                        <tr><td colspan="9" class="empty-row">No candidates in this batch.</td></tr>
+                        <tr><td colspan="12" class="empty-row">No candidates in this batch.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -121,12 +127,33 @@
         </section>
 
         <section aria-label="Generation" class="settings-section" style="margin-top:32px;">
-            <h3 class="settings-heading">Generation</h3>
+            <h3 class="settings-heading">Generate Onboarding Files</h3>
             <div class="gen-meta">
-                <p>Template configured: <strong>{% if template_configured %}<span style="color:var(--accent-green);">Yes</span>{% else %}<span style="color:var(--accent-red);">No</span>{% endif %}</strong></p>
+                <p>Input template configured: <strong>{% if template_configured %}<span style="color:var(--accent-green);">Yes</span>{% else %}<span style="color:var(--accent-red);">No</span>{% endif %}</strong></p>
+                <p>Backend template configured: <strong>{% if backend_template_configured %}<span style="color:var(--accent-green);">Yes</span>{% else %}<span style="color:var(--accent-red);">No</span>{% endif %}</strong></p>
+                <p>Recruiter profile: <strong>{{ recruiter_name or 'NOT SET' }}</strong> {% if not recruiter_name %}<a href="/settings">Set it in Settings</a>{% endif %}</p>
                 <p>Output folder: <code>{{ output_base_dir }}</code></p>
+                {% if backend_blocking %}
+                <p style="color:var(--accent-red);">Backend workbook is blocked for {{ backend_blocking }} candidate(s) (missing Recruiter / DOJ / Gender / PIN). Review and complete the fields first.</p>
+                {% endif %}
             </div>
-            <button id="btnGenerate" class="btn btn-primary" {% if not template_configured %}disabled title="Template not configured"{% endif %}>Generate Batch Excel</button>
+            <button id="btnGenerate" class="btn btn-primary" {% if not template_configured or not backend_template_configured or (backend_blocking and backend_blocking > 0) %}disabled title="Templates must be configured and backend fields completed"{% endif %}>Generate Onboarding Files</button>
+
+            <div id="pairResult" style="display:none;margin-top:18px;">
+                <div class="kpi-grid" style="grid-template-columns:1fr 1fr;">
+                    <div class="kpi-card">
+                        <div class="kpi-label">Self-Onboarding Workbook</div>
+                        <div class="kpi-desc" id="pairSoName" style="margin:8px 0;word-break:break-all;">&mdash;</div>
+                        <button class="btn btn-sm btn-outline" data-open-file="pairSoId">Open</button>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">TeamHR Backend Mail Workbook</div>
+                        <div class="kpi-desc" id="pairObName" style="margin:8px 0;word-break:break-all;">&mdash;</div>
+                        <button class="btn btn-sm btn-outline" data-open-file="pairObId">Open</button>
+                    </div>
+                </div>
+                <p style="margin-top:12px;"><a href="/generated-files" class="btn btn-outline btn-sm">Open Generated Files &rarr;</a></p>
+            </div>
 
             {% if generated_files %}
             <h3 class="settings-heading" style="margin-top:24px;">Existing Generated Files</h3>
@@ -139,6 +166,7 @@
                             <th>Candidates</th>
                             <th>Generated At</th>
                             <th>Status</th>
+                            <th>Open</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -149,6 +177,7 @@
                             <td>{{ f.candidate_count | default(0) }}</td>
                             <td>{{ f.generated_at | default('') }}</td>
                             <td><span class="status-badge status-{{ f.generation_status | default('done') }}">{{ f.generation_status | default('done') }}</span></td>
+                            <td><button class="btn btn-sm btn-outline" data-open-file="{{ f.file_id }}">Open</button></td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -201,8 +230,8 @@
             if (btnGen) {
                 btnGen.addEventListener("click", function () {
                     btnGen.disabled = true;
-                    btnGen.textContent = "Generating\u2026";
-                    fetch("/api/generate-excel", {
+                    btnGen.textContent = "Generating both workbooks\u2026";
+                    fetch("/api/generate-onboarding-pair", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ batch_id: BATCH_ID, only_ready: true })
@@ -210,21 +239,59 @@
                         .then(function (r) { return r.json(); })
                         .then(function (data) {
                             if (data.success) {
-                                if (typeof showToast === "function") showToast("Excel generated: " + (data.filename || ""), "success");
-                                setTimeout(function () { window.location.reload(); }, 1500);
+                                var rp = document.getElementById("pairResult");
+                                document.getElementById("pairSoName").textContent =
+                                    data.self_onboarding_filename || data.filename || "";
+                                document.getElementById("pairObName").textContent =
+                                    data.backend_filename || "";
+                                var soBtn = document.querySelector('[data-open-file="pairSoId"]');
+                                if (soBtn) {
+                                    soBtn.setAttribute("data-open-file", data.self_onboarding_file_id || "");
+                                    soBtn.disabled = !data.self_onboarding_file_id;
+                                }
+                                var obBtn = document.querySelector('[data-open-file="pairObId"]');
+                                if (obBtn) {
+                                    obBtn.setAttribute("data-open-file", data.backend_file_id || "");
+                                    obBtn.disabled = !data.backend_file_id;
+                                }
+                                rp.style.display = "";
+                                if (typeof showToast === "function") showToast("Both onboarding workbooks generated.", "success");
                             } else {
                                 if (typeof showToast === "function") showToast(data.error || "Generation failed", "error");
                                 btnGen.disabled = false;
-                                btnGen.textContent = "Generate Batch Excel";
+                                btnGen.textContent = "Generate Onboarding Files";
                             }
                         })
                         .catch(function () {
                             if (typeof showToast === "function") showToast("Network error", "error");
                             btnGen.disabled = false;
-                            btnGen.textContent = "Generate Batch Excel";
+                            btnGen.textContent = "Generate Onboarding Files";
                         });
                 });
             }
+
+            document.querySelectorAll("[data-open-file]").forEach(function (b) {
+                var fid = b.getAttribute("data-open-file") || "";
+                if (fid.indexOf("pair") === 0) b.disabled = true;
+                b.addEventListener("click", function (e) {
+                    var fid = b.getAttribute("data-open-file");
+                    if (!fid) return;
+                    fetch("/api/generated/open-file", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ file_id: fid })
+                    })
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (!data.ok && typeof showToast === "function") {
+                                showToast(data.error || "Could not open file", "error");
+                            }
+                        })
+                        .catch(function () {
+                            if (typeof showToast === "function") showToast("Network error", "error");
+                        });
+                });
+            });
         })();
     </script>
 </body>

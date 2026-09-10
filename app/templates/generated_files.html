@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generated Files - TeamHR</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/ui.css">
+</head>
+<body>
+    {% include 'partials/_sidebar.html' %}
+
+    <main class="content">
+        {% include 'partials/_searchbar.html' %}
+        <header class="topbar">
+            <div>
+                <h1 class="page-title">Generated Files</h1>
+                <p class="page-subtitle">Self-Onboarding + TeamHR Backend Mail pairs</p>
+            </div>
+        </header>
+
+        <section>
+            <div class="ui-card">
+                <div class="ui-card-head">
+                    <h3 class="section-heading">Onboarding Pairs</h3>
+                    <span class="ui-badge">{{ pairs | length }} pair(s)</span>
+                </div>
+                {% if pairs %}
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Generated At</th>
+                            <th>Batch</th>
+                            <th>Candidates</th>
+                            <th>Self-Onboarding File</th>
+                            <th>Backend Mail File</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in pairs %}
+                        <tr>
+                            <td>{{ p.generated_at or '' }}</td>
+                            <td>Batch {{ p.batch_id }}</td>
+                            <td>{{ p.candidate_count }}</td>
+                            <td>
+                                {% if p.self_onboarding_file_id_details %}
+                                {{ p.self_onboarding_file_id_details.filename }}
+                                {% else %}
+                                <span class="ui-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if p.backend_mail_file_id_details %}
+                                {{ p.backend_mail_file_id_details.filename }}
+                                {% else %}
+                                <span class="ui-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="actions-cell">
+                                {% if p.self_onboarding_file_id %}
+                                <button type="button" class="btn btn-sm" data-file-id="{{ p.self_onboarding_file_id }}" data-action="open-file">Open SO</button>
+                                {% endif %}
+                                {% if p.backend_mail_file_id %}
+                                <button type="button" class="btn btn-sm" data-file-id="{{ p.backend_mail_file_id }}" data-action="open-file">Open OB</button>
+                                {% endif %}
+                                {% if p.self_onboarding_file_id %}
+                                <button type="button" class="btn btn-sm btn-secondary" data-file-id="{{ p.self_onboarding_file_id }}" data-action="open-folder">Folder</button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="ui-empty">
+                    <span class="empty-ic">&#128194;</span>
+                    No onboarding pairs yet. Go to <a href="/batch-review">Batch Review</a> and generate the two workbooks.
+                </div>
+                {% endif %}
+            </div>
+        </section>
+
+        {% if legacy_files %}
+        <section>
+            <div class="ui-card">
+                <div class="ui-card-head">
+                    <h3 class="section-heading">Earlier Generated Files</h3>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>Filename</th><th>Batch</th><th>Generated At</th><th>Candidates</th><th>Actions</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for f in legacy_files %}
+                        <tr>
+                            <td>{{ f.filename }}</td>
+                            <td>Batch {{ f.batch_id }}</td>
+                            <td>{{ f.generated_at or '' }}</td>
+                            <td>{{ f.candidate_count }}</td>
+                            <td class="actions-cell">
+                                <button type="button" class="btn btn-sm" data-file-id="{{ f.file_id }}" data-action="open-file">Open</button>
+                                <button type="button" class="btn btn-sm btn-secondary" data-file-id="{{ f.file_id }}" data-action="open-folder">Folder</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        {% endif %}
+    </main>
+
+    {% include 'partials/_toast.html' %}
+    <script>
+        document.addEventListener('click', async (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            const action = btn.dataset.action;
+            const fileId = btn.dataset.fileId;
+            const res = await fetch('/api/generated/open-' + (action === 'open-file' ? 'file' : 'folder'), {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({file_id: parseInt(fileId, 10)}),
+            });
+            const data = await res.json();
+            if (!data.ok) {
+                const toast = document.querySelector('.ui-toast');
+                if (toast) { toast.textContent = data.error || 'Could not open.'; toast.classList.add('show'); toast.classList.add('error'); }
+            }
+        });
+    </script>
+</body>
+</html>

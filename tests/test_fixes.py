@@ -7,7 +7,9 @@ Covers the critical behavioural requirements:
   1. Aadhaar name extraction must NEVER produce MALE/FEMALE.
   2. Aadhaar labels must not be used as candidate names.
   3. Name confidence must not claim "High" when uncertain.
-  4. Facility Type = Delivery Hub for all 4 cost codes.
+  4. Facility Type rule: 4421/8751 -> Delivery Hub, 4441 -> Pickup Hub,
+     8752 -> no facility master yet. (Updated: 4441 was Delivery Hub until
+     the PICKUP_HUB correction; see generation of Self_Onboarding / Backend.)
   5. validate_candidate rejects missing/invalid/MALE-FEMALE name.
   6. Cost-code change safety helpers (clear role/hub, re-derive).
   7. OCR summary logging does not include sensitive plaintext (checked
@@ -19,6 +21,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from app import generation
 from app import ocr
 from app import rules
 
@@ -111,15 +114,20 @@ def test_uncertain_name_not_high_confidence():
 # ── 2. Facility Type rules ───────────────────────────────────────────────────
 
 def test_facility_type_all_cost_codes():
-    print("Test: facility type = Delivery Hub for 4421/4441/8751/8752")
-    for cc in ["4421", "4441", "8751", "8752"]:
-        ft = rules.COST_CODE_FACILITY_TYPE.get(cc)
-        check(ft == "Delivery Hub", f"cost code {cc} -> '{ft}'")
+    print("Test: facility type rule = 4421/8751 Delivery Hub, 4441 Pickup Hub, 8752 unmapped")
+    expected = {"4421": "Delivery Hub", "8751": "Delivery Hub",
+                "4441": "Pickup Hub", "8752": ""}
+    for cc, expect in expected.items():
+        got = rules.COST_CODE_FACILITY_TYPE.get(cc)
+        check(got == expect, f"cost code {cc} -> '{got}' (expected '{expect}')")
 
-    # And it must not be "Pickup Hub" for any of them
-    for cc in ["4421", "4441", "8751", "8752"]:
-        check(rules.COST_CODE_FACILITY_TYPE.get(cc) != "Pickup Hub",
-              f"cost code {cc} is not Pickup Hub")
+    # Derived from the master when possible; otherwise the cost-code rule.
+    check(rules.facility_type_output("4421") == "DELIVERY_HUB", "4421 -> DELIVERY_HUB")
+    check(rules.facility_type_output("4441") == "PICKUP_HUB", "4441 -> PICKUP_HUB")
+    check(rules.facility_type_output("8751") == "DELIVERY_HUB", "8751 -> DELIVERY_HUB")
+    check(rules.facility_type_output("8752") == "", "8752 -> '' (unresolved, Needs Review)")
+    check(generation.facility_type_display_for({"cost_code": "8752", "facility_name": ""})
+          == "Needs Review", "8752 display -> Needs Review")
 
 
 # ── 3. Candidate validation — name required / no MALE / no FEMALE ───────────
@@ -162,15 +170,19 @@ def _role_valid_for(cc):
 
 
 def test_cost_code_switch_clears_incompatible_data():
-    print("Test: switching cost code clears incompatible role/hub, stays Delivery Hub")
-    # 4421 -> 4441 : LM role/hub must be cleared, FT stays Delivery Hub
+    print("Test: switching cost code clears incompatible role/hub, re-derives facility type")
+    # 4421 -> 4441 : LM role/hub must be cleared; facility type re-derives
+    # (Delivery Hub -> Pickup Hub) because 4441 is a First Mile cost code.
     for old, new in [("4421", "4441"), ("4441", "8751")]:
-        # After switching to `new`, the resolves must use `new`'s prefix but the
-        # facility type must remain Delivery Hub.
+        # After switching to `new`, the resolves must use `new`'s prefix.
         info = rules.get_cost_code_info(new)
         check(info["operation"] in ("First Mile", "Last Mile"), f"{new} operation derived")
-        check(rules.COST_CODE_FACILITY_TYPE[new] == "Delivery Hub",
-              f"{new} still Delivery Hub after switch")
+
+    # 4421 / 8751 are Delivery Hub; 4441 is Pickup Hub (First Mile).
+    check(rules.COST_CODE_FACILITY_TYPE["4421"] == "Delivery Hub" and
+          rules.COST_CODE_FACILITY_TYPE["4441"] == "Pickup Hub" and
+          rules.COST_CODE_FACILITY_TYPE["8751"] == "Delivery Hub",
+          "facility type re-derived by cost code (4421/8751 Delivery, 4441 Pickup)")
 
     # Role that is valid for the old code may be invalid for the new one;
     # validate_candidate on the new code with the stale role must error.

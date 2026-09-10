@@ -6,6 +6,7 @@ Future: replace temporary data with Excel master imports.
 
 import re
 import difflib
+from datetime import datetime
 from typing import Optional
 
 from app import master_data
@@ -48,19 +49,77 @@ COST_CODES = {
 }
 
 # ── Facility Type Rules (Cost Code -> Auto Facility Type) ────────────────────
-# For all current cost codes, Facility Type is automatically set to "Delivery Hub"
-# and displayed read-only. Cost codes not in this map keep Facility Type as a
-# user-selectable field (selectable UI is retained for that case).
-#
+# Auto-set from the cost code's operation:
+#   Last Mile  -> "Delivery Hub"
+#   First Mile -> "Pickup Hub"
+# 8752 (Myntra First Mile) has NO production hub master yet, so it stays
+# unresolved ("") and is marked "Needs Review" instead of auto-assigned.
 # Keep this mapping centralized here so it can be changed if business rules
 # change later.
 
 COST_CODE_FACILITY_TYPE = {
     "4421": "Delivery Hub",
-    "4441": "Delivery Hub",
+    "4441": "Pickup Hub",
     "8751": "Delivery Hub",
-    "8752": "Delivery Hub",
+    "8752": "",
 }
+
+# Facility Type by operation (used when the facility master row provides the
+# operation). Convenience view of the same rule above.
+OPERATION_FACILITY_TYPE = {
+    "Last Mile": "Delivery Hub",
+    "First Mile": "Pickup Hub",
+}
+
+# Canonical values written to the Self-Onboarding workbook's Facility Type* col.
+FACILITY_TYPE_DELIVERY = "DELIVERY_HUB"
+FACILITY_TYPE_PICKUP = "PICKUP_HUB"
+FACILITY_TYPE_REVIEW = "Needs Review"
+
+
+def facility_type_display(cost_code: str) -> str:
+    """Display value for the given cost code ('' means unresolved / review)."""
+    return COST_CODE_FACILITY_TYPE.get(cost_code, "")
+
+
+def facility_type_for_master_row(master_row: Optional[dict]) -> str:
+    """Facility Type from an effective facility master row.
+
+    The effective row already carries a facility_type; when it is missing we
+    fall back to the operation-derived rule. Returns '' when unresolved.
+    """
+    if not master_row:
+        return ""
+    row_type = (master_row.get("facility_type") or "").strip()
+    if row_type:
+        return row_type
+    operation = (master_row.get("operation") or "").strip()
+    return OPERATION_FACILITY_TYPE.get(operation, "")
+
+
+def facility_type_output(cost_code: str, master_row: Optional[dict] = None) -> str:
+    """Canonical Facility Type value written to the Self-Onboarding workbook.
+
+    Resolved in this priority:
+      1. Effective facility master row facility_type (authoritative, e.g. an
+         admin override), translated to the canonical DELIVERY_HUB/PICKUP_HUB.
+      2. Cost-code rule (COST_CODE_FACILITY_TYPE) as a safe fallback.
+      3. "" => caller should flag "Needs Review".
+    """
+    row_type = facility_type_for_master_row(master_row) if master_row else ""
+    resolved = row_type or facility_type_display(cost_code)
+    if not resolved:
+        return ""
+    return {
+        "Delivery Hub": FACILITY_TYPE_DELIVERY,
+        "Pickup Hub": FACILITY_TYPE_PICKUP,
+    }.get(resolved, "")
+
+
+def update_facility_type_rule(cost_code: str, display_type: str) -> None:
+    """Admin-master override hook (not used by default; kept for future use)."""
+    if cost_code in COST_CODE_FACILITY_TYPE:
+        COST_CODE_FACILITY_TYPE[cost_code] = display_type
 
 # ── Role Definitions ─────────────────────────────────────────────────────────
 
@@ -1155,6 +1214,175 @@ def validate_candidate(data: dict) -> dict[str, str]:
 
 
 # ── Serialize Rules for Frontend ─────────────────────────────────────────────
+
+
+# ── Backend / New candidate field normalizers ────────────────────────────────
+# Normalizers for the fields the TeamHR Backend Mail workbook needs. They are
+# deliberately conservative: garbage/uncertain values stay empty so the review
+# screen (not silent inference) resolves them.
+
+GENDER_ALIASES = {
+    "male": "Male",
+    "m": "Male",
+    "female": "Female",
+    "f": "Female",
+    "transgender": "Transgender",
+    "trans": "Transgender",
+    "t": "Transgender",
+}
+GENDERS = ["Male", "Female", "Transgender"]
+
+
+def normalize_gender(raw: object) -> tuple[str, Optional[str]]:
+    """Normalize a gender value. Valid values are Male/Female/Transgender.
+
+    Gender must only ever be taken from Aadhaar OCR; anything uncertain returns
+    an empty value (caller flags for review) rather than a guess. OCR artifacts
+    like "FEMALEM" / "FEMALEMALE" are collapsed to a clean label.
+    """
+    if raw is None:
+        return "", None
+    text = str(raw).strip()
+    if not text:
+        return "", None
+    key = text.lower().replace(" ", "")
+    if "female" in key and "male" not in key.replace("female", "", 1):
+        return "Female", None
+    if "trans" in key:
+        return "Transgender", None
+    if "female" in key or "femal" in key:
+        return "Female", None
+    value = GENDER_ALIASES.get(key)
+    if value:
+        return value, None
+    if "male" in key:
+        return "Male", None
+    return "", "Gender should be Male, Female or Transgender (from Aadhaar only)."
+
+
+def normalize_pin_code(raw: object) -> tuple[str, Optional[str]]:
+    """Extract a 6-digit PIN from free text (prefix + 6 digits)."""
+    if raw is None:
+        return "", None
+    digits = re.sub(r"\D", "", str(raw))
+    if len(digits) >= 6:
+        digits = digits[:6]
+        if digits[0] in "123456789":
+            return digits, None
+        return "", "Pin Code must not start with 0."
+    if digits:
+        return "", "Pin Code must be exactly 6 digits."
+    return "", None
+
+
+def normalize_father_name(raw: object) -> tuple[str, Optional[str]]:
+    """Strip relation markers (S/O, D/O, C/O) from a father/guardian name.
+
+    Blank is allowed (some candidates have no father record). Never inferred.
+    """
+    if raw is None:
+        return "", None
+    text = str(raw).strip()
+    if not text:
+        return "", None
+    text = re.sub(r"\b(?:s/o|d/o|c/o|w/o)\b", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s+", " ", text).strip(" ,.:;")
+    if len(text) < 2:
+        return "", None
+    return text, None
+
+
+def normalize_uan(raw: object) -> tuple[str, Optional[str]]:
+    """Normalize a UAN number (digits only, kept as text). Optional field."""
+    if raw is None:
+        return "", None
+    digits = re.sub(r"\D", "", str(raw))
+    return digits, None
+
+
+def parse_date(raw: object) -> str:
+    """Parse a date to YYYY-MM-DD. Accepts DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD.
+
+    Returns '' when the value cannot be safely parsed (review item, never a
+    silent fallback to today).
+    """
+    if raw is None:
+        return ""
+    text = str(raw).strip()
+    if not text:
+        return ""
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
+
+
+def normalize_doj(raw: object) -> tuple[str, Optional[str]]:
+    """Normalize Date of Joining. Required for backend generation."""
+    value = parse_date(raw)
+    if not value:
+        if raw is None or not str(raw).strip():
+            return "", None
+        return "", "Date of Joining must be a valid DD/MM/YYYY date."
+    return value, None
+
+
+def validate_new_candidate_fields(data: dict) -> dict[str, str]:
+    """Validate the backend-only fields added for the TeamHR workbook."""
+    errors: dict[str, str] = {}
+
+    gender_raw = data.get("gender", "")
+    _, gender_err = normalize_gender(gender_raw)
+    if gender_err:
+        errors["gender"] = gender_err
+
+    pin_raw = data.get("pin_code", "")
+    _, pin_err = normalize_pin_code(pin_raw)
+    if pin_err:
+        errors["pin_code"] = pin_err
+
+    doj_raw = data.get("doj", "")
+    _, doj_err = normalize_doj(doj_raw)
+    if doj_err:
+        errors["doj"] = doj_err
+
+    return errors
+
+
+# ── Backend workbook validation ──────────────────────────────────────────────
+
+BACKEND_REQUIRED_FIELDS = [
+    ("recruiter_name", "Recruiter Name"),
+    ("doj", "Date of Joining"),
+    ("name", "Name"),
+    ("mobile", "Mobile No"),
+    ("designation", "Designation"),
+    ("location_code", "Branch"),
+    ("facility_name", "Vertical (Facility)"),
+    ("state", "State"),
+    ("salary", "Net Salary"),
+    ("aadhaar_number", "Aadhaar No"),
+    ("dob", "DOB"),
+    ("address", "Address"),
+    ("pin_code", "Pin Code"),
+    ("gender", "Gender"),
+]
+BACKEND_OPTIONAL_FIELDS = ["father_name", "uan_no"]
+
+
+def validate_backend_candidate(candidate: dict) -> list[str]:
+    """Return the list of problems blocking this candidate from the Backend workbook.
+
+    Empty list means the candidate is backend-ready.
+    """
+    problems: list[str] = []
+    for key, label in BACKEND_REQUIRED_FIELDS:
+        value = candidate.get(key)
+        if value is None or str(value).strip() == "":
+            problems.append(f"{label} is required for the Backend workbook.")
+    return problems
 
 
 def get_rules_for_frontend() -> dict:

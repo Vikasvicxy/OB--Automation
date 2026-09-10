@@ -64,7 +64,10 @@ def make_generated_file(tmp, batch_id=1, n=2, status=True):
             "batch_id": batch_id, "name": f"Candidate {i}", "mobile": f"90000000{i:02d}",
             "designation": "LM - Delivery Executive", "facility_name": hubs[0],
             "location_code": "BLR/NLM", "cost_code": "4421", "status": "ready",
-            "entity": "Flipkart", "aadhaar_number": "123456789012",
+            "entity": "Flipkart", "aadhaar_number": "123456789012", "salary": 18000,
+            "recruiter_name": "Test Recruiter", "doj": "12/08/2026",
+            "gender": "Male", "pin_code": "560001", "dob": "01/01/1995",
+            "address": "12 MG Road, Bengaluru, Karnataka 560001",
         })
         ids.append(cid)
     res = generation.generate_batch_excel(batch_id, only_ready=True)
