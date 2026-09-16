@@ -32,7 +32,7 @@ MASTERS_DIR = Path(__file__).resolve().parent.parent / "data" / "masters"
 
 MASTER_FILES = {
     "designation": "Designation_Master.xlsx",
-    "facility": "Facility_Master.xlsx",
+    "facility": "HubName.xlsx",
     "self_onboarding": "Self_Onboarding_Template.xlsx",
 }
 
@@ -43,6 +43,8 @@ _COST_CODE_DESIGNATIONS: dict[str, list[str]] = {}
 _HUB_MASTER: list[str] = []
 _LOCATION_BY_FACILITY: dict[str, str] = {}
 _FACILITY_ROWS: list[dict] = []
+_FACILITY_ROW_BY_KEY: dict[str, dict] = {}
+_DISPLAY_COUNTS: dict[str, int] = {}
 
 # Intelligent user/OCR aliases. An alias only resolves to an OFFICIAL master
 # designation, and only when valid for the selected cost code.
@@ -144,32 +146,81 @@ def _extract_designations(records: list) -> dict[str, list[str]]:
     return by_cc
 
 
+def _classify_facility_text(*parts: str) -> tuple[bool, bool, str, str, str]:
+    """Classify a facility from its combined system-reference + display text.
+
+    Priority order (same as before, but the system reference in Column A is
+    considered too, so friendly display labels like "Yelahanka Pickup Hub" are
+    still recognised as First Mile via their ``_PL`` reference):
+        1. text contains "MYNTRA"            -> Myntra (8751 / Last Mile)
+        2. text contains "_PL" or "PICKUP"   -> Flipkart First Mile (4441)
+        3. otherwise                          -> Flipkart Last Mile (4421)
+
+    Returns (is_myntra, is_fm, cost_code, entity, operation).
+    """
+    text = " ".join(str(p) for p in parts if p).upper()
+    is_myntra = "MYNTRA" in text
+    is_fm = bool(re.search(r"_PL", text)) or "PICKUP" in text
+    if is_myntra:
+        return True, False, "8751", "Myntra", "Last Mile"
+    if is_fm:
+        return False, True, "4441", "Flipkart", "First Mile"
+    return False, False, "4421", "Flipkart", "Last Mile"
+
+
+def _facility_row_key(facility_ref: str, location: str, display: str) -> str:
+    """Unique identity for a master row: the LOCATION code (unique in the
+    master), falling back to the system reference then the display name."""
+    if location:
+        return location
+    if facility_ref:
+        return facility_ref
+    return display
+
+
 def _extract_facilities(records: list) -> list[dict]:
     """Parse facility rows into effective-style facility dicts WITHOUT touching
     module state or the database. Shared by :func:`load_facilities` and the safe
-    dry-run :func:`preview_masters`."""
+    dry-run :func:`preview_masters`.
+
+    HubName.xlsx semantics:
+      * Column A "FACILITY" is the system-compatible facility reference/identifier
+        (e.g. ``HEBBALMYNTRAHUB_BLR (HebbalMYNTRAHub_BLR)``) — NEVER replaced by
+        the friendly display name.
+      * Column B "LOCATION" is the Branch/location code used in the generated
+        workbooks (e.g. ``HBB/BLR``). It is unique per row.
+      * Column C "FACILITY NAME" is the human-searchable display label
+        (e.g. ``HebbalMYNTRAHub_BLR``). When blank it falls back to Column B,
+        then Column A.
+    Rows sharing a display name (or with a missing name) are all kept; their
+    uniqueness comes from the row key, not the display name.
+    """
     facilities = []
-    seen = set()
+    seen_keys: set[str] = set()
     for r in records:
-        facility = _find_col(r, ["FACILITY"])
+        facility_ref = _find_col(r, ["FACILITY"])
         location = _find_col(r, ["LOCATION", "LOCATION CODE"])
-        facility_name = _find_col(r, ["FACILITY NAME", "FACILITYNAME"]) or facility
+        facility_name = _find_col(r, ["FACILITY NAME", "FACILITYNAME"])
         if not facility_name or facility_name.upper() in ("FACILITY NAME", "FACILITY", "N/A", "NA"):
+            facility_name = location or facility_ref
+        if not (facility_ref or location or facility_name):
             continue
-        if facility_name in seen:
+        if not facility_ref:
+            facility_ref = location or facility_name
+        if not location:
+            location = facility_ref or facility_name
+        key = _facility_row_key(facility_ref, location, facility_name)
+        if key in seen_keys:
             continue
-        seen.add(facility_name)
-        is_myntra = "MYNTRA" in facility_name.upper()
-        is_fm = facility_name.endswith("_PL")
-        # Cost code is derived once from classification rules so the effective
-        # master can filter uniformly (Excel facilities emulate admin records).
-        cost_code = "8751" if is_myntra else ("4441" if is_fm else "4421")
-        entity = "Myntra" if is_myntra else "Flipkart"
-        operation = "First Mile" if is_fm else "Last Mile"
+        seen_keys.add(key)
+        is_myntra, is_fm, cost_code, entity, operation = _classify_facility_text(
+            facility_ref, facility_name)
         facilities.append({
+            "facility_ref": facility_ref,
             "facility_name": facility_name,
             "location": location,
-            "facility": facility or facility_name,
+            "facility": facility_ref or facility_name,
+            "hub_key": key,
             "is_myntra": is_myntra,
             "is_fm": is_fm,
             "entity": entity,
@@ -217,14 +268,18 @@ def load_designations(path: Optional[Path] = None) -> dict:
 def load_facilities(path: Optional[Path] = None) -> dict:
     """Load the Facility / Location Master from Excel.
 
-    Expected columns: FACILITY | LOCATION | FACILITY NAME.
-    FACILITY NAME is the main searchable hub value; LOCATION is the location code.
+    HubName.xlsx columns: FACILITY | LOCATION | FACILITY NAME.
+    FACILITY NAME (Column C) is the human-searchable hub value; LOCATION
+    (Column B) is the Branch/location code; FACILITY (Column A) is the
+    system-compatible facility reference. None of them are renamed.
     """
     global _HUB_MASTER, _LOCATION_BY_FACILITY, _FACILITY_ROWS
+    global _FACILITY_ROW_BY_KEY, _DISPLAY_COUNTS
     fpath = path or FACILITY_FILE
     if not fpath.exists():
         database.record_master_load("facility", fpath.name, 0, "not_configured")
         _HUB_MASTER, _LOCATION_BY_FACILITY, _FACILITY_ROWS = [], {}, []
+        _FACILITY_ROW_BY_KEY, _DISPLAY_COUNTS = {}, {}
         return {"kind": "facility", "row_count": 0, "status": "Not Configured",
                 "filename": fpath.name, "ok": False}
 
@@ -237,8 +292,25 @@ def load_facilities(path: Optional[Path] = None) -> dict:
     records = _rows_to_records(rows)
     facilities = _extract_facilities(records)
     _FACILITY_ROWS = facilities
-    _HUB_MASTER = [f["facility_name"] for f in facilities]
-    _LOCATION_BY_FACILITY = {f["facility_name"]: f["location"] for f in facilities}
+    _FACILITY_ROW_BY_KEY = {f["hub_key"]: f for f in facilities}
+    _DISPLAY_COUNTS = {}
+    for f in facilities:
+        name = f["facility_name"]
+        _DISPLAY_COUNTS[name] = _DISPLAY_COUNTS.get(name, 0) + 1
+    # Only displacements that are unambiguous (exactly one row) get a
+    # display-name -> location mapping. Duplicate display names resolve only
+    # through the row-level API so the user can pick the exact row.
+    _HUB_MASTER = []
+    _LOCATION_BY_FACILITY = {}
+    for f in facilities:
+        name = f["facility_name"]
+        if name in _LOCATION_BY_FACILITY:
+            del _LOCATION_BY_FACILITY[name]
+            continue
+        if _DISPLAY_COUNTS.get(name, 0) == 1:
+            _LOCATION_BY_FACILITY[name] = f["location"]
+        if name not in _HUB_MASTER:
+            _HUB_MASTER.append(name)
     database.record_master_load("facility", fpath.name, len(facilities), "ok")
     return {"kind": "facility", "row_count": len(facilities), "status": "Configured",
             "filename": fpath.name, "ok": True}
@@ -514,6 +586,11 @@ def _effective_facilities() -> list[dict]:
       * A facility name whose ONLY admin record is INACTIVE is deactivated and
         excluded from the effective view (protects history; not a hard delete).
       * Otherwise the Excel row is used as-is.
+
+    Every row carries ``facility_ref`` (the system-compatible facility
+    reference) so the friendly display name never replaces the system
+    identifier. For Excel rows this is Column A; for admin rows it is the
+    display name itself.
     """
     excel = {f["facility_name"]: f for f in _FACILITY_ROWS}
     try:
@@ -542,9 +619,11 @@ def _effective_facilities() -> list[dict]:
             continue
         a = admin_active[name]
         merged.append({
+            "facility_ref": a.get("facility_ref") or a["facility_name"],
             "facility_name": a["facility_name"],
             "location": a.get("location_code", ""),
             "facility": a["facility_name"],
+            "hub_key": a.get("location_code") or a["facility_name"],
             "is_myntra": a.get("entity", "") == "Myntra",
             "is_fm": (a.get("operation", "") == "First Mile"),
             "entity": a.get("entity", ""),
@@ -566,11 +645,146 @@ def get_facility_names() -> list[str]:
     return [f["facility_name"] for f in _effective_facilities()]
 
 
-def get_location_for_facility(facility_name: str) -> str:
-    for f in _effective_facilities():
-        if f["facility_name"] == facility_name:
-            return f["location"]
-    return ""
+def get_facility_rows(cost_code: str = "") -> list[dict]:
+    """Row-level facility view (Excel rows + active admin rows).
+
+    Unlike :func:`get_facilities`, this is NOT deduplicated by display name:
+    duplicate/ambiguous display names appear once per master row so the UI can
+    show an exact pick. Each row carries ``facility_ref``, ``location`` and
+    ``hub_key``. Filtered by cost code when given.
+    """
+    out = []
+    excel = {f["hub_key"]: f for f in _FACILITY_ROWS}
+    try:
+        admin_all = _admin().list_admin_facilities()
+    except Exception:  # noqa: BLE001
+        admin_all = []
+    caught: set[str] = set()
+    for a in admin_all:
+        if not int(a.get("active", 0)):
+            caught.add(a.get("facility_name", ""))
+            continue
+        key = a.get("location_code") or a.get("facility_name", "")
+        # An active admin record for a name that also exists in Excel overrides
+        # the Excel rows of the same display name; otherwise it is appended.
+        if a.get("facility_name") in {f["facility_name"] for f in excel.values()}:
+            excel.pop(key, None)
+            for k in [k for k, v in excel.items() if v["facility_name"] == a.get("facility_name")]:
+                excel.pop(k, None)
+        row = {
+            "facility_ref": a.get("facility_ref") or a.get("facility_name", ""),
+            "facility_name": a.get("facility_name", ""),
+            "location": a.get("location_code", ""),
+            "facility": a.get("facility_name", ""),
+            "hub_key": key,
+            "is_myntra": a.get("entity", "") == "Myntra",
+            "is_fm": a.get("operation", "") == "First Mile",
+            "entity": a.get("entity", ""),
+            "operation": a.get("operation", ""),
+            "cost_code": a.get("cost_code", ""),
+            "facility_type": a.get("facility_type", "Delivery Hub"),
+            "state": a.get("state", ""),
+            "active": 1,
+            "source": "Admin Override" if a.get("facility_name") in {f["facility_name"] for f in _FACILITY_ROWS} else "Admin",
+        }
+        excel[key] = row
+    for f in excel.values():
+        if f.get("facility_name") in caught and f["source"] == "Admin":
+            continue
+        if f.get("cost_code") and cost_code and f["cost_code"] != cost_code:
+            continue
+        out.append(dict(f))
+    return out
+
+
+def get_row_for_location(location: str) -> Optional[dict]:
+    """Return the EXACT master row whose location (Column B) equals ``location``."""
+    loc = (location or "").strip()
+    if not loc:
+        return None
+    for f in _FACILITY_ROWS:
+        if f["location"] == loc:
+            return dict(f)
+    return None
+
+
+def get_rows_for_display(display: str) -> list[dict]:
+    """All master rows whose display name (Column C) equals ``display``.
+
+    Used to present duplicate/ambiguous display names as exact choices.
+    """
+    d = (display or "").strip()
+    if not d:
+        return []
+    return [dict(f) for f in get_facility_rows() if f["facility_name"] == d]
+
+
+def resolve_facility_selection(facility: str, location: str = "", facility_ref: str = "") -> dict:
+    """Resolve a UI facility selection to its authoritative ``location`` and
+    ``facility_ref`` from the master rows — never from client text alone.
+
+    Match order (strongest first):
+      1. facility_ref (system identifier) exact match on Column A,
+      2. location code exact match on Column B,
+      3. display name (Column C) exact match when it is unambiguous,
+      4. facility_ref substring on the display text (e.g. "HebbalMYNTRAHub_BLR").
+    Returns {"location": ..., "facility_ref": ..., "facility_name": ...,
+             "hub_key": ...} with whatever could be resolved.
+    """
+    res = {"location": "", "facility_ref": "", "facility_name": facility, "hub_key": ""}
+    facility = (facility or "").strip()
+    location = (location or "").strip()
+    facility_ref = (facility_ref or "").strip()
+
+    def _pick(row):
+        if row:
+            res["location"] = row.get("location", "")
+            res["facility_ref"] = row.get("facility_ref", "")
+            res["facility_name"] = row.get("facility_name", facility)
+            res["hub_key"] = row.get("hub_key", "")
+            return True
+        return False
+
+    rows = get_facility_rows()
+    if not rows:
+        return res
+    # 1. System reference exact match (Column A).
+    if facility_ref:
+        if _pick(next((r for r in rows if r["facility_ref"] == facility_ref), None)):
+            return res
+    # 2. Location code exact match (Column B).
+    if location:
+        if _pick(next((r for r in rows if r["location"] == location), None)):
+            return res
+    # 3. Display name exact match (Column C) but only when unambiguous.
+    if facility:
+        exact = [r for r in rows if r["facility_name"] == facility]
+        if len(exact) == 1:
+            if _pick(exact[0]):
+                return res
+        elif len(exact) > 1:
+            if location:
+                if _pick(next((r for r in exact if r["location"] == location), None)):
+                    return res
+            return res
+    # 4. Substring: also verify the reference so "myntrahub" never hijacks a
+    #    Flipkart facility.
+    if facility and _DISPLAY_COUNTS.get(facility, 0) == 0:
+        matches = [r for r in rows if facility in r["facility_ref"]]
+        if len(matches) == 1:
+            _pick(matches[0])
+    return res
+
+
+def get_location_for_facility(facility_name: str, location: str = "", facility_ref: str = "") -> str:
+    """Exact official LOCATION code for a facility.
+
+    Accepts the display name (Column C), a location code (Column B, identity
+    preserved) or the facility system reference (Column A). Returns "" when the
+    value is unknown or maps to more than one row. Resolves through the
+    effective (admin-merged) row view so overrides are honoured.
+    """
+    return resolve_facility_selection(facility_name, location, facility_ref)["location"]
 
 
 def get_effective_facility(facility_name: str) -> Optional[dict]:
@@ -581,73 +795,122 @@ def get_effective_facility(facility_name: str) -> Optional[dict]:
     return None
 
 
-def classify_hub(hub_name: str) -> str:
-    upper = (hub_name or "").upper()
-    if "MYNTRA" in upper:
+def classify_hub(hub_name: str, location: str = "", facility_ref: str = "") -> str:
+    """Classify a facility as LM, FM, or Myntra based on name.
+
+    Classification considers the display name, the system reference (Column A)
+    and the location so markers like ``_PL``/MYNTRA that live in the reference
+    are honoured even when the friendly label hides them.
+
+    Priority order:
+        1. text contains "MYNTRA"        -> "Myntra"
+        2. text contains "_PL" or "PICKUP" -> "FM" (Flipkart First Mile)
+        3. otherwise                      -> "LM" (Flipkart Last Mile)
+    """
+    is_myntra, is_fm, _cc, _e, _op = _classify_facility_text(
+        facility_ref, hub_name, location)
+    if is_myntra:
         return "Myntra"
-    if hub_name.endswith("_PL"):
+    if is_fm:
         return "FM"
     return "LM"
 
 
 def get_hubs_for_cost_code(cost_code: str) -> list[str]:
-    """Exact official facility values valid for a cost code (effective view).
+    """Exact official facility VALUES (display names) valid for a cost code.
+
+    The display label (Column C) is used as the facility value in the workbook;
+    the system reference/location stay available on the row. Cost-code
+    membership is decided by the row classification (display + system ref).
 
     4421 -> Flipkart LM  |  4441 -> Flipkart FM
     8751 -> Myntra LM    |  8752 -> only when an admin explicitly adds one
     """
-    eff = _effective_facilities()
-    if not eff:
-        return []
-    return [f["facility_name"] for f in eff if f["cost_code"] == cost_code]
+    names = []
+    for f in get_facility_rows():
+        if f["cost_code"] == cost_code and f["facility_name"] not in names:
+            names.append(f["facility_name"])
+    return names
 
 
-
-
-def fuzzy_search_facilities(query: str, cost_code: str = "", top_n: int = 5) -> list[dict]:
-    """Fuzzy search facility master rows (filtered by cost code if given).
-
-    Returns up to top_n rows as {facility_name, location, facility}. Supports
-    typing, dropdown, fuzzy matching, and minor spelling mistakes. Final values
-    always come from the master.
-    """
-    hubs = get_hubs_for_cost_code(cost_code) if cost_code else get_facility_names()
-    if not hubs:
+def _facility_search_rows(query: str, cost_code: str = "", top_n: int = 5) -> list[dict]:
+    """Score effective facility rows against ``query`` on display + system ref."""
+    rows = get_facility_rows(cost_code) if cost_code else get_facility_rows()
+    if not rows:
         return []
     q = (query or "").strip().lower()
-    by_name = {f["facility_name"]: f for f in _effective_facilities()}
     scored = []
-    for hub in hubs:
-        hl = hub.lower()
+    for row in rows:
+        display = row.get("facility_name", "")
+        ref = row.get("facility_ref", "")
+        loc = row.get("location", "")
         if not q:
-            score = 0.0
-        elif q in hl:
-            score = 100.0
-        else:
-            hub_clean = re.sub(r"[\s_\-]+", "", hl).replace("hub", "").replace("blr", "").replace("pl", "")
-            score = max(
-                difflib.SequenceMatcher(None, q.replace(" ", ""), hub_clean).ratio() * 100,
-                difflib.SequenceMatcher(None, q, hl).ratio() * 100,
-            )
-        scored.append((score, hub))
+            scored.append((0.0, row))
+            continue
+        best = 0.0
+        for hay in (display, ref, loc):
+            hl = hay.lower()
+            if not hl:
+                continue
+            if q == hl:
+                best = max(best, 150.0)
+            elif q in hl:
+                best = max(best, 100.0)
+            else:
+                clean = re.sub(r"[\s_\-]+", "", hl).replace("hub", "").replace("blr", "").replace("pl", "")
+                best = max(best, difflib.SequenceMatcher(None, re.sub(r"[\s_\-]+", "", q), clean).ratio() * 100)
+        scored.append((best, row))
     if q:
         scored.sort(key=lambda x: x[0], reverse=True)
     else:
         scored.sort(key=lambda x: x[0], reverse=True)
     out = []
-    for score, hub in scored:
+    for score, row in scored:
         if q and score < 30:
             break
-        out.append(by_name[hub])
+        out.append(dict(row))
         if len(out) >= top_n:
             break
     return out
 
 
+def fuzzy_search_facilities(query: str, cost_code: str = "", top_n: int = 5) -> list[dict]:
+    """Fuzzy search facility master ROWS (filtered by cost code if given).
+
+    Primary search text is the display name (Column C); the system reference
+    (Column A) and location (Column B) are searched too, so
+    ``HebbalMYNTRAHub_BLR``/``HBB/BLR`` also resolve. Returns up to top_n rows
+    as dicts carrying {facility_name, location, facility_ref, facility,
+    hub_key, ...}. Duplicate display names appear once per row so the UI can
+    offer an exact pick. Final values always come from the master.
+    """
+    return _facility_search_rows(query, cost_code, top_n)
+
+
 def fuzzy_find_hub(query: str, hubs: list[str], top_n: int = 5) -> list[str]:
-    """Return up to top_n closest official facility names to ``query``."""
-    return [r["facility_name"] for r in fuzzy_search_facilities(query, "")] if not hubs \
-        else _fuzzy_find_hub_in(query, hubs, top_n)
+    """Return up to top_n closest official facility names to ``query``.
+
+    The constrained ``hubs`` display list is scored first; when nothing matches
+    we fall back to the row-level search (system ref + location are searched
+    too) and map results back to display names that exist in ``hubs``. This way
+    a hub whose display falls back to its location (e.g. ``BLR/NLM``) is still
+    findable by its readable name (``Nelamangala``) and the returned value is
+    always a valid entry of the constrained list.
+    """
+    if not hubs:
+        return [r["facility_name"] for r in _facility_search_rows(query, "", top_n)]
+    direct = _fuzzy_find_hub_in(query, hubs, top_n)
+    if direct:
+        return direct
+    out = []
+    hubs_set = set(hubs)
+    for r in _facility_search_rows(query, "", top_n):
+        name = r["facility_name"]
+        if name in hubs_set and name not in out:
+            out.append(name)
+        if len(out) >= top_n:
+            break
+    return out
 
 
 def _fuzzy_find_hub_in(query: str, hubs: list[str], top_n: int) -> list[str]:
@@ -675,7 +938,8 @@ def _fuzzy_find_hub_in(query: str, hubs: list[str], top_n: int) -> list[str]:
     return [s[0] for s in scored[:top_n]]
 
 
-# Expose module-level authoritative snapshots for rules / frontend.
+# Expose module-level authoritative snapshots (reference the LIVE containers
+# so reloads via load_facilities() are reflected).
 COST_CODE_DESIGNATIONS = _COST_CODE_DESIGNATIONS
 HUB_MASTER = _HUB_MASTER
 LOCATION_BY_FACILITY = _LOCATION_BY_FACILITY

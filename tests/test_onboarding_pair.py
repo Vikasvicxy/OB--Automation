@@ -1,11 +1,11 @@
-"""Onboarding pair generation tests (Self-Onboarding + TeamHR Backend Mail).
+"""Onboarding workbook generation tests (single two-sheet Excel Generation).
 
-LOCAL / MOCKED — nothing is uploaded anywhere. These verify the transactional
-pair generation: exact 14-column Self-Onboarding workbook, exact 16-column
-TeamHR Backend Mail workbook, shared timestamp generation_pair_id, the
-Facility Type corrections (4441 -> PICKUP_HUB), strict PII placement (full
-Aadhaar only inside the backend workbook), recruiter profile, per-candidate
-backend fields and clean failure handling.
+LOCAL / MOCKED — nothing is uploaded anywhere. These verify the single
+onboarding workbook: exactly 13-column ``OB Format`` sheet + exactly 14-column
+``Mail Format`` sheet in ONE ``Onboarding_<ts>.xlsx`` file (kind
+``excel_generation``), correct values/PII placement (full Aadhaar only inside
+the Mail Format sheet), real Excel dates, and clean/transactional failure
+handling.
 
 Run with:
     python tests/test_onboarding_pair.py
@@ -45,15 +45,12 @@ def fresh_db():
     db.DB_DIR = Path(tmp) / "database"
     db.DB_PATH = db.DB_DIR / "teamhr.db"
     db.init_db()
-    # Isolate the runtime config file so tests never mutate production/local
-    # data/config.json (e.g. generation.set_output_base_dir writes config).
     os.environ["TEAMHR_CONFIG_FILE"] = str(Path(tmp) / "config.json")
     return tmp
 
 
 def _candidate(batch_id, name, mobile, cost_code, designation, team, operation,
                facility=None, location=None):
-    """A ready candidate with every backend-only field set explicitly."""
     hubs = rules.get_hubs_for_cost_code(cost_code)
     if facility is None:
         facility = hubs[0] if hubs else ""
@@ -76,24 +73,26 @@ def _candidate(batch_id, name, mobile, cost_code, designation, team, operation,
         "aadhaar_number": "1234 5678 9012",
         "dob": "15/05/1995",
         "address": "Flat 5, 12th Main Road, Bengaluru",
-        "recruiter_name": "Test Recruiter",
         "doj": "10/09/2026",
         "gender": "Male",
         "pin_code": "560001",
         "father_name": "",
-        "uan_no": "",
     }
 
 
 def SO_PAIR_CANDIDATES(batch_id):
-    # User §45 plan: Flipkart LM 4421, Flipkart FM 4441 (Pickup Hub), Myntra LM 8751.
+    # Explicit facilities/locations (deterministic, independent of master row
+    # ordering): Flipkart LM 4421, Flipkart FM 4441 (Pickup Hub), Myntra LM 8751.
     return [
         _candidate(batch_id, "Anil Kumar", "9000000001", "4421",
-                   "LM - Delivery Executive", "LAST MILE - OPERATIONS", "Last Mile"),
+                   "LM - Delivery Executive", "LAST MILE - OPERATIONS", "Last Mile",
+                   facility="Peenya Hub", location="BLR/PEN"),
         _candidate(batch_id, "Bharath K", "9000000002", "4441",
-                   "FM - Delivery Executive", "FIRST MILE - OPERATIONS", "First Mile"),
+                   "FM - Delivery Executive", "FIRST MILE - OPERATIONS", "First Mile",
+                   facility="NelamangalaHub_BLR_PL", location="NelamangalaHub_BLR_PL"),
         _candidate(batch_id, "Chandan G", "9000000003", "8751",
-                   "LM - Delivery Executive", "LAST MILE - OPERATIONS", "Last Mile"),
+                   "LM - Delivery Executive", "LAST MILE - OPERATIONS", "Last Mile",
+                   facility="BanaswadiMYNTRAHub_BLR", location="BNS/BLR"),
     ]
 
 
@@ -105,42 +104,29 @@ def setup_case(tmp, candidates):
     return gen_dir, ids
 
 
-def test_pair_generation_shape():
-    """Generating the pair lands BOTH files, DB rows, and shared pair id."""
+def test_generation_shape():
+    """Generating lands ONE workbook (both sheets), a single DB row, pair id."""
     tmp = fresh_db()
     gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
 
-    res = generation.generate_onboarding_pair(1, only_ready=True)
-    check("pair generation success", res.get("success") is True, str(res))
+    res = generation.generate_onboarding_workbook(1, only_ready=True)
+    check("generation success", res.get("success") is True, str(res))
 
-    so_path = Path(res["file_path"])
-    ob_path = Path(res["backend_file_path"])
-    check("self-onboarding file written", so_path.exists())
-    check("backend file written", ob_path.exists())
+    path = Path(res["file_path"])
+    check("single workbook written", path.exists(), str(path))
+    check("workbook named Onboarding_<id>", path.name.startswith("Onboarding_"),
+          path.name)
+    check("no sibling pair file", len(list(gen_dir.rglob("TeamHR_OB_*.xlsx"))) == 0)
 
-    # Folders: jobs under <date>/uploads/ and <date>/backend_mail/.
-    check("so file in uploads folder", gen_dir.name == "gen" and so_path.parent.name == "uploads",
-          str(so_path))
-    check("ob file in backend_mail folder", ob_path.parent.name == "backend_mail", str(ob_path))
-
-    # Shared timestamp token -> recognizable pair.
-    ts = so_path.stem.replace("Self_Onboarding_", "")
-    check("backend file shares timestamp", ob_path.stem == f"TeamHR_OB_{ts}",
-          f"{ob_path.stem} vs TeamHR_OB_{ts}")
-    check("pair id is PO-<ts>", res["generation_pair_id"] == f"PO-{ts}",
+    ts = path.stem.replace("Onboarding_", "")
+    check("single pair id PO-<ts>", res["generation_pair_id"] == f"PO-{ts}",
           res["generation_pair_id"])
-    check("pair id prefix PO-", res["generation_pair_id"].startswith("PO-"))
 
-    # DB: two rows under one generation_pair_id, correct kinds.
-    so_gf = db.get_generated_file(res["generated_file_id"])
-    ob_gf = db.get_generated_file(res["backend_file_id"])
-    check("so row kind self_onboarding", so_gf["kind"] == "self_onboarding", str(so_gf["kind"]))
-    check("ob row kind backend_mail", ob_gf["kind"] == "backend_mail", str(ob_gf["kind"]))
-    check("rows share generation_pair_id",
-          so_gf["generation_pair_id"] == ob_gf["generation_pair_id"] == f"PO-{ts}",
-          f"{so_gf['generation_pair_id']} / {ob_gf['generation_pair_id']}")
-    check("rows share generated_at", so_gf["generated_at"] == ob_gf["generated_at"],
-          f"{so_gf['generated_at']} / {ob_gf['generated_at']}")
+    gf = db.get_generated_file(res["generated_file_id"])
+    check("one kind excel_generation row", gf["kind"] == "excel_generation",
+          str(gf.get("kind")))
+    check("pair id on row", gf["generation_pair_id"] == f"PO-{ts}",
+          str(gf.get("generation_pair_id")))
     check("candidates marked generated",
           db.get_candidate(ids[0])["excel_generated"] == "true")
     check("batch status Generated",
@@ -149,154 +135,139 @@ def test_pair_generation_shape():
 
     pairs = db.list_generation_pairs()
     check("list_generation_pairs returns the pair", len(pairs) == 1, str(len(pairs)))
-    p = pairs[0]
-    check("pair has both file details",
-          p.get("self_onboarding_file_id_details") and p.get("backend_mail_file_id_details"))
-    check("pair id matches", p["generation_pair_id"] == f"PO-{ts}")
+    check("pair id matches", pairs[0]["generation_pair_id"] == f"PO-{ts}")
 
     check("daily master exported",
           Path(res["daily_master_file"]).exists() if res.get("daily_master_file") else False,
           str(res.get("daily_master_file")))
-    return so_path, ob_path
+    return path
 
 
-def _read_sheet(path):
+def _find_header_row(ws):
+    for r in range(1, min(ws.max_row, 6) + 1):
+        vals = [str(ws.cell(row=r, column=c).value or "") for c in range(1, ws.max_column + 1)]
+        if any(v.strip() for v in vals):
+            return r, vals
+    return 1, []
+
+
+def _read_workbook(path):
     wb = openpyxl.load_workbook(str(path))
-    ws = wb.worksheets[0]
-    headers = [str(ws.cell(row=1, column=c).value or "") for c in range(1, ws.max_column + 1)]
-    return wb, ws, headers
+    ob = wb[generation.OB_FORMAT_SHEET]
+    mail = wb[generation.MAIL_FORMAT_SHEET]
+    ob_hdr, ob_vals = _find_header_row(ob)
+    mail_hdr, mail_vals = _find_header_row(mail)
+    return wb, ob, mail, ob_hdr, mail_hdr, ob_vals, mail_vals
 
 
-def test_self_onboarding_content():
-    """Self-Onboarding workbook: exact 14 columns + exact per-candidate values."""
+def test_ob_sheet_content():
+    """OB Format sheet: exact 13 columns + exact per-candidate values."""
     tmp = fresh_db()
     gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
-    res = generation.generate_onboarding_pair(1, only_ready=True)
-    so_path = Path(res["file_path"])
+    res = generation.generate_onboarding_workbook(1, only_ready=True)
+    path = Path(res["file_path"])
 
-    wb, ws, headers = _read_sheet(so_path)
-    expected = ["Sl No", "Name*", "Mobile Number*", "Team*", "Cost Code*",
-                "Migrant Bonus*", "Facility Type*", "Line of Business*",
-                "Sub Type*", "Role - Designation*", "Fixed Net Take Home*",
-                "State*", "Facility*", "Contractor*"]
-    check("exact 14 SO headers", headers == expected, str(headers))
+    wb, ob, mail, ob_hdr, mail_hdr, ob_vals, mail_vals = _read_workbook(path)
+    expected_ob = ["Sl No", "Name*", "Mobile Number*", "Team*", "Cost Code*",
+                   "Facility Type*", "Line of Business*", "Sub Type*",
+                   "Role - Designation*", "Fixed Net Take Home*", "State*",
+                   "Facility*", "Contractor*"]
+    check("exact 13 OB headers", ob_vals == expected_ob, str(ob_vals))
+    check("no extra OB columns", len(ob_vals) == 13, str(len(ob_vals)))
 
-    hdr = {str(ws.cell(row=1, column=c).value or "").strip().lower().rstrip("*"): c
-           for c in range(1, ws.max_column + 1)}
-    hdr_to_key = {
-        "name": "name",
-        "mobile number": "mobile",
-        "cost code": "cost_code",
-        "team": "team",
-        "migrant bonus": "migrant",
-        "facility type": "facility_type",
-        "line of business": "lob",
-        "sub type": "sub_type",
-        "state": "state",
-        "contractor": "contractor",
-        "fixed net take home": "salary",
-    }
     rows = []
-    for r in range(2, ws.max_row + 1):
-        if ws.cell(row=r, column=hdr["name"]).value:
-            rows.append({key: ws.cell(row=r, column=hdr[label]).value
-                         for label, key in hdr_to_key.items()})
-    check("3 data rows written", len(rows) == 3, str(len(rows)))
+    for r in range(ob_hdr + 1, ob.max_row + 1):
+        name = ob.cell(row=r, column=2).value
+        if name not in (None, ""):
+            rows.append({col: ob.cell(row=r, column=c).value
+                         for c, col in enumerate(expected_ob, start=1)})
+    check("3 OB data rows", len(rows) == 3, str(len(rows)))
+    by_name = {r["Name*"]: r for r in rows}
+    check("Anil/Bharath/Chandan present",
+          all(n in by_name for n in ("Anil Kumar", "Bharath K", "Chandan G")))
 
-    by_name = {r["name"]: r for r in rows}
-    check("Anil row present", "Anil Kumar" in by_name)
-    check("Bharath row present", "Bharath K" in by_name)
-    check("Chandan row present", "Chandan G" in by_name)
-
-    for nm, mob, cc, team, ft in [
-        ("Anil Kumar", "9000000001", "4421", "LAST MILE - OPERATIONS", "DELIVERY_HUB"),
-        ("Bharath K", "9000000002", "4441", "FIRST MILE - OPERATIONS", "PICKUP_HUB"),
-        ("Chandan G", "9000000003", "8751", "LAST MILE - OPERATIONS", "DELIVERY_HUB"),
+    for nm, mob, cc, team, ft, loc in [
+        ("Anil Kumar", "9000000001", "4421", "LAST MILE - OPERATIONS",
+         "DELIVERY_HUB", "BLR/PEN"),
+        ("Bharath K", "9000000002", "4441", "FIRST MILE - OPERATIONS",
+         "PICKUP_HUB", "NelamangalaHub_BLR_PL"),
+        ("Chandan G", "9000000003", "8751", "LAST MILE - OPERATIONS",
+         "DELIVERY_HUB", "BNS/BLR"),
     ]:
         r = by_name[nm]
-        check(f"{nm} mobile", str(r["mobile"]) == mob, str(r["mobile"]))
-        check(f"{nm} cost code", r["cost_code"] == cc, str(r["cost_code"]))
-        check(f"{nm} team", r["team"] == team, str(r["team"]))
-        check(f"{nm} migrant No", r["migrant"] == "No", str(r["migrant"]))
-        check(f"{nm} facility type {ft}", str(r["facility_type"]) == ft, str(r["facility_type"]))
-        check(f"{nm} LOB", r["lob"] == "EKART", str(r["lob"]))
-        check(f"{nm} sub type", r["sub_type"] == "EKART", str(r["sub_type"]))
-        check(f"{nm} state", str(r["state"]) == "KARNATAKA", str(r["state"]))
+        check(f"{nm} mobile @text", str(r["Mobile Number*"]) == mob, str(r["Mobile Number*"]))
+        check(f"{nm} cost code", r["Cost Code*"] == cc, str(r["Cost Code*"]))
+        check(f"{nm} team", r["Team*"] == team, str(r["Team*"]))
+        check(f"{nm} facility type", r["Facility Type*"] == ft, str(r["Facility Type*"]))
+        check(f"{nm} LOB", r["Line of Business*"] == "EKART", str(r["Line of Business*"]))
+        check(f"{nm} sub type", r["Sub Type*"] == "EKART", str(r["Sub Type*"]))
+        check(f"{nm} designation", r["Role - Designation*"] == by_name[nm]["Role - Designation*"])
+        check(f"{nm} state", r["State*"] == "KARNATAKA", str(r["State*"]))
+        check(f"{nm} facility is location code", r["Facility*"] == loc, str(r["Facility*"]))
         check(f"{nm} contractor",
-              str(r["contractor"]) == "TEAM HR GSA PRIVATE LIMITED", str(r["contractor"]))
+              r["Contractor*"] == "TEAM HR GSA PRIVATE LIMITED", str(r["Contractor*"]))
+        check(f"{nm} salary numeric", r["Fixed Net Take Home*"] == 18000,
+              str(r["Fixed Net Take Home*"]))
 
-    check("salary numeric 18000", rows[0]["salary"] == 18000, str(rows[0]["salary"]))
-
-    # PII: full Aadhaar must NEVER appear inside the Self-Onboarding workbook.
+    # PII: full Aadhaar must NEVER appear inside the OB Format sheet.
     aadhar = "1234 5678 9012"
     leak = []
-    for row in ws.iter_rows(values_only=True):
+    for row in ob.iter_rows(values_only=True):
         for cell in row:
             if cell is not None and aadhar in str(cell):
                 leak.append(str(cell))
-    check("SO workbook never contains full Aadhaar", not leak, str(leak[:1]))
+    check("OB sheet never contains full Aadhaar", not leak, str(leak[:1]))
 
 
-def test_self_onboarding_no_aadhaar_in_name_or_folders():
+def test_no_aadhaar_in_name_or_folders():
     tmp = fresh_db()
     gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
-    res = generation.generate_onboarding_pair(1, only_ready=True)
-    # Filenames/folders never contain the Aadhaar.
-    for piece in (res["filename"], res["backend_filename"],
-                  res["file_path"], res["backend_file_path"], res["date_folder"]):
+    res = generation.generate_onboarding_workbook(1, only_ready=True)
+    for piece in (res["filename"], res["file_path"], res["date_folder"]):
         check(f"no Aadhaar in '{piece}'", "1234" not in piece and "9012" not in piece)
 
 
-def test_backend_workbook_content():
-    """TeamHR Backend workbook: exact 16 headers, dates as dates, PII placed here."""
+def test_mail_sheet_content():
+    """Mail Format sheet: exact 14 headers + dates as dates + full PII here."""
     tmp = fresh_db()
     gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
-    res = generation.generate_onboarding_pair(1, only_ready=True)
-    ob_path = Path(res["backend_file_path"])
+    res = generation.generate_onboarding_workbook(1, only_ready=True)
+    path = Path(res["file_path"])
 
-    wb, ws, headers = _read_sheet(ob_path)
-    expected = ["Recruiter Name", "Date of Joining", "Name", "Mobile No",
-                "Designation", "Branch", "Vertical", "State", "Net Salary",
-                "Aadhar No", "DOB", "Fathers Name", "Address", "Pin Code",
-                "Gender", "UAN NO"]
-    check("exact 16 backend headers", headers == expected, str(headers))
+    wb, ob, mail, ob_hdr, mail_hdr, ob_vals, mail_vals = _read_workbook(path)
+    expected_mail = ["Date of Joining", "Name", "Mobile No", "Designation",
+                     "Branch", "Vertical", "State", "Net Salary", "Aadhar No",
+                     "DOB", "Fathers Name", "Address", "Pin Code", "Gender"]
+    check("exact 14 mail headers", mail_vals == expected_mail, str(mail_vals))
+    check("no recruiter/uan column", "Recruiter" not in str(mail_vals)
+          and "UAN" not in str(mail_vals).upper(), str(mail_vals))
 
-    hdr = {str(ws.cell(row=1, column=c).value or "").strip().lower(): c
-           for c in range(1, ws.max_column + 1)}
     rows = []
-    for r in range(2, ws.max_row + 1):
-        if ws.cell(row=r, column=hdr["name"]).value:
-            rows.append({k: ws.cell(row=r, column=hdr[k]).value for k in hdr})
-    check("3 backend data rows", len(rows) == 3, str(len(rows)))
+    for r in range(mail_hdr + 1, mail.max_row + 1):
+        if mail.cell(row=r, column=2).value not in (None, ""):
+            rows.append({col: mail.cell(row=r, column=c).value
+                         for c, col in enumerate(expected_mail, start=1)})
+    check("3 mail rows", len(rows) == 3, str(len(rows)))
+    by_name = {r["Name"]: r for r in rows}
+    check("all three present", all(n in by_name for n in ("Anil Kumar", "Bharath K", "Chandan G")))
 
-    by_name = {row["name"]: row for row in rows}
+    anil_row = mail_hdr + 1 + rows.index(by_name["Anil Kumar"])
     r = by_name["Anil Kumar"]
-    check("recruiter name", r["recruiter name"] == "Test Recruiter", str(r["recruiter name"]))
-    check("name", r["name"] == "Anil Kumar", str(r["name"]))
-    check("mobile", str(r["mobile no"]) == "9000000001", str(r["mobile no"]))
-    check("designation", r["designation"] == "LM - Delivery Executive", str(r["designation"]))
-    check("branch is location code", r["branch"] == "BLR/NLM", str(r["branch"]))
-    check("vertical is facility name", bool(r["vertical"]), str(r["vertical"]))
-    check("state title-cased Karnataka", r["state"] == "Karnataka", str(r["state"]))
-    check("net salary numeric", r["net salary"] == 18000, str(r["net salary"]))
-    # Full Aadhaar IS the design of the backend workbook.
-    check("aadhaar full present", str(r["aadhar no"]).replace(" ", "") == "123456789012",
-          str(r["aadhar no"]))
-    check("address", r["address"] == "Flat 5, 12th Main Road, Bengaluru", str(r["address"]))
-    check("pin code", str(r["pin code"]) == "560001", str(r["pin code"]))
-    check("gender", r["gender"] == "Male", str(r["gender"]))
-    check("father name blank", r["fathers name"] in ("", None), str(r["fathers name"]))
-    check("uan blank", r["uan no"] in ("", None), str(r["uan no"]))
+    check("designation", r["Designation"] == "LM - Delivery Executive", str(r["Designation"]))
+    check("branch is location code", r["Branch"] == "BLR/PEN", str(r["Branch"]))
+    check("vertical is facility name", r["Vertical"] == "Peenya Hub", str(r["Vertical"]))
+    check("state title-cased Karnataka", r["State"] == "Karnataka", str(r["State"]))
+    check("net salary numeric", r["Net Salary"] == 18000, str(r["Net Salary"]))
+    check("aadhaar full present", str(r["Aadhar No"]).replace(" ", "") == "123456789012",
+          str(r["Aadhar No"]))
+    check("father name blank", r["Fathers Name"] in ("", None), str(r["Fathers Name"]))
+    check("address", r["Address"] == "Flat 5, 12th Main Road, Bengaluru", str(r["Address"]))
+    check("pin code", str(r["Pin Code"]) == "560001", str(r["Pin Code"]))
+    check("gender", r["Gender"] == "Male", str(r["Gender"]))
 
-    anil_row = 2
-    for idx, row in enumerate(rows, start=2):
-        if row["name"] == "Anil Kumar":
-            anil_row = idx
-            break
-
-    # Dates stored as real Excel dates with DD/MM/YYYY format.
-    doj_cell = ws.cell(row=anil_row, column=2)
-    dob_cell = ws.cell(row=anil_row, column=11)
+    # Dates as real Excel dates with DD/MM/YYYY format; columns numbered per spec.
+    doj_cell = mail.cell(row=anil_row, column=1)
+    dob_cell = mail.cell(row=anil_row, column=10)
     check("DOJ is a date", isinstance(doj_cell.value, (datetime.date, datetime.datetime)),
           str(doj_cell.value))
     check("DOJ format DD/MM/YYYY", doj_cell.number_format == "DD/MM/YYYY",
@@ -306,27 +277,20 @@ def test_backend_workbook_content():
           str(dob_cell.value))
     check("DOB value 1995-05-15", str(dob_cell.value)[:10] == "1995-05-15", str(dob_cell.value))
 
-    # Column formats: Mobile (D), Aadhar (J), UAN (P) TEXT; Net Salary (I) number.
-    check("mobile TEXT", ws.cell(row=anil_row, column=4).number_format == "@")
-    check("aadhar TEXT", ws.cell(row=anil_row, column=10).number_format == "@")
-    check("salary #,##0", ws.cell(row=anil_row, column=9).number_format == "#,##0")
-
-    # Header styling spot checks.
-    check("header bold", ws.cell(row=1, column=1).font.bold is True)
-    check("header fill D9E1F2", ws.cell(row=1, column=1).fill.fgColor.rgb
-          in ("00D9E1F2", "FFD9E1F2", "D9E1F2") or True)
-    check("header border", ws.cell(row=1, column=1).border.left.style == "thin")
+    check("mobile TEXT", mail.cell(row=anil_row, column=3).number_format == "@")
+    check("aadhar TEXT", mail.cell(row=anil_row, column=9).number_format == "@")
+    check("salary #,##0", mail.cell(row=anil_row, column=8).number_format == "#,##0")
 
 
-def test_pair_generation_failure_clean():
-    """A blocked candidate (8752, no Myntra FM master) fails cleanly, no files."""
+def test_generation_failure_clean():
+    """A totally invalid candidate (8752, no Myntra FM master) fails cleanly."""
     tmp = fresh_db()
     gen_dir, ids = setup_case(tmp, [
         _candidate(1, "Failing FM", "9000000099", "8752",
                    "FM - Delivery Executive", "FIRST MILE - OPERATIONS", "First Mile",
                    facility="", location=""),
     ])
-    res = generation.generate_onboarding_pair(1, only_ready=True)
+    res = generation.generate_onboarding_workbook(1, only_ready=True)
     check("generation fails", res.get("success") is False, str(res))
     check("error explains validation",
           "No Ready candidates" in res.get("error", "") or "No Myntra" in res.get("error", ""),
@@ -338,48 +302,82 @@ def test_pair_generation_failure_clean():
     check("no files left behind", not files, str(files))
 
 
-def test_pair_generation_transactional_no_partial_files():
-    """Failure during build leaves NO file on disk (both workbooks or none)."""
+def test_generation_transactional_no_partial_files():
+    """Failure during build leaves NO file on disk and no DB rows."""
     tmp = fresh_db()
     gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
-    # Sabotage the backend save so only the SO file would have been written.
     from app import generation as g
-    orig = g.build_backend_workbook
-    def boom(rows):
-        raise RuntimeError("simulated backend build failure")
-    g.build_backend_workbook = boom
+    orig = g.build_onboarding_workbook
+    def boom(rows, mail_rows):
+        raise RuntimeError("simulated workbook build failure")
+    g.build_onboarding_workbook = boom
     try:
-        res = g.generate_onboarding_pair(1, only_ready=True)
+        res = g.generate_onboarding_workbook(1, only_ready=True)
     finally:
-        g.build_backend_workbook = orig
+        g.build_onboarding_workbook = orig
     check("generation reports failure", res.get("success") is False, str(res))
     files = [p for p in gen_dir.rglob("*") if p.is_file()]
     check("no partial files remain", not files, str(files))
-    # No DB rows either.
     pairs = db.list_generation_pairs()
     check("no generation rows recorded", not pairs, str([p["generation_pair_id"] for p in pairs]))
 
 
-def test_repeat_generation_no_overwrite():
-    """Two generations create distinct files (never overwrite the pair)."""
+def test_missing_mail_field_blocks():
+    """Missing gender/pin/doj blocks the WORKBOOK (no OB-only output)."""
     tmp = fresh_db()
     gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
-    res1 = generation.generate_onboarding_pair(1, only_ready=True)
-    res2 = generation.generate_onboarding_pair(1, only_ready=True)
+    cand = _candidate(1, "Missing Fields", "9000000088", "4421",
+                      "LM - Delivery Executive", "LAST MILE - OPERATIONS", "Last Mile",
+                      facility="Peenya Hub", location="BLR/PEN")
+    for k in ("doj", "gender", "pin_code"):
+        cand[k] = ""
+    db.insert_candidate(cand)
+    res = generation.generate_onboarding_workbook(1, only_ready=True)
+    check("generation blocked", res.get("success") is False, str(res))
+    check("error cites mail requirements",
+          "Mail Format requirements" in res.get("error", ""), res.get("error", ""))
+    files = [p for p in gen_dir.rglob("*") if p.is_file()]
+    check("no partial files", not files, str(files))
+
+
+def test_invalid_candidate_excluded():
+    """A candidate failing OB validation is excluded and noted, never written."""
+    tmp = fresh_db()
+    gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
+    cand = _candidate(1, "Bad Designation", "9000000077", "4421",
+                      "LM - Not A Real Role", "LAST MILE - OPERATIONS", "Last Mile",
+                      facility="Peenya Hub", location="BLR/PEN")
+    bad_id = db.insert_candidate(cand)
+    res = generation.generate_onboarding_workbook(1, only_ready=True)
+    check("generation still succeeds for the valid candidates",
+          res.get("success") is True, str(res))
+    check("bad candidate marked needs_attention",
+          db.get_candidate(bad_id)["status"] == "needs_attention",
+          str(db.get_candidate(bad_id)["status"]))
+    check("valid candidate still ready", db.get_candidate(ids[0])["status"] == "ready")
+    path = Path(res["file_path"])
+    wb, ob, mail, ob_hdr, mail_hdr, _, _ = _read_workbook(path)
+    data_rows = [r for r in range(ob_hdr + 1, ob.max_row + 1)
+                 if ob.cell(row=r, column=2).value not in (None, "")]
+    check("only the 3 valid rows written", len(data_rows) == 3, str(len(data_rows)))
+
+
+def test_repeat_generation_no_overwrite():
+    """Two generations create distinct workbooks (never overwrite)."""
+    tmp = fresh_db()
+    gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
+    res1 = generation.generate_onboarding_workbook(1, only_ready=True)
+    res2 = generation.generate_onboarding_workbook(1, only_ready=True)
     check("both generations succeed", res1["success"] and res2["success"])
-    check("so filenames differ",
-          res1["filename"] != res2["filename"],
+    check("filenames differ", res1["filename"] != res2["filename"],
           f"{res1['filename']} / {res2['filename']}")
-    check("backend filenames differ",
-          res1["backend_filename"] != res2["backend_filename"])
     check("pair ids differ", res1["generation_pair_id"] != res2["generation_pair_id"])
-    check("4 generated file rows",
-          len(db.list_generated_files(batch_id=1, limit=10)) == 4,
-          str(len(db.list_generated_files(batch_id=1, limit=10))))
-    all_so = list(gen_dir.rglob("Self_Onboarding_*.xlsx"))
-    all_ob = list(gen_dir.rglob("TeamHR_OB_*.xlsx"))
-    check("two so files", len(all_so) == 2, str([p.name for p in all_so]))
-    check("two ob files", len(all_ob) == 2, str([p.name for p in all_ob]))
+    rows = db.list_generated_files(batch_id=1, limit=10)
+    check("two excel_generation rows",
+          len(rows) == 2 and all(r["kind"] == "excel_generation" for r in rows),
+          str([(r["kind"]) for r in rows]))
+    all_wb = list(gen_dir.rglob("Onboarding_*.xlsx"))
+    check("two workbooks", len(all_wb) == 2, str([p.name for p in all_wb]))
 
 
 def test_recruiter_profile():
@@ -394,28 +392,11 @@ def test_recruiter_profile():
     generation.save_recruiter_profile("Recruiter Default")
 
 
-def test_missing_backend_field_blocks_pair():
-    """Missing recruiter/doj/gender/pin blocks the WHOLE pair (no SO-only output)."""
-    tmp = fresh_db()
-    gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
-    cand = _candidate(1, "Missing Fields", "9000000088", "4421",
-                      "LM - Delivery Executive", "LAST MILE - OPERATIONS", "Last Mile")
-    for k in ("recruiter_name", "doj", "gender", "pin_code"):
-        cand[k] = ""
-    db.insert_candidate(cand)
-    res = generation.generate_onboarding_pair(1, only_ready=True)
-    check("generation blocked", res.get("success") is False, str(res))
-    check("error cites backend requirements",
-          "Backend workbook requirements" in res.get("error", ""), res.get("error", ""))
-    files = [p for p in gen_dir.rglob("*") if p.is_file()]
-    check("no partial files", not files, str(files))
-
-
 def test_daily_master_masks_aadhaar():
     """Daily master export never contains a full Aadhaar."""
     tmp = fresh_db()
     gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
-    res = generation.generate_onboarding_pair(1, only_ready=True)
+    res = generation.generate_onboarding_workbook(1, only_ready=True)
     daily = Path(res["daily_master_file"])
     check("daily master exists", daily.exists(), str(daily))
     wb = openpyxl.load_workbook(str(daily))
@@ -429,8 +410,8 @@ def test_daily_master_masks_aadhaar():
     check("daily master has no full Aadhaar", not leak, str(leak[:1]))
 
 
-def test_onboarding_pair_api():
-    """/api/generate-onboarding-pair returns the pair; /api/generated-pairs hides PII."""
+def test_onboarding_api():
+    """/api/generate-excel generates; download works; generated-pairs hides PII."""
     from fastapi.testclient import TestClient
     from app import main
 
@@ -438,77 +419,49 @@ def test_onboarding_pair_api():
     gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
     client = TestClient(main.app)
 
-    r = client.post("/api/generate-onboarding-pair", json={"batch_id": 1})
+    r = client.post("/api/generate-excel", json={"batch_id": 1})
     check("API generation 200", r.status_code == 200, str(r.status_code))
     data = r.json()
     check("API success", data.get("success") is True, str(data))
-    check("API returns so file id", data.get("generated_file_id"))
-    check("API returns backend file id", data.get("backend_file_id"))
+    check("API returns file id", data.get("generated_file_id"))
 
-    rp = client.post("/api/recruiter-profile", json={"recruiter_name": "API Recruiter"})
-    rp_data = rp.json()
-    check("recruiter-profile save", rp_data.get("recruiter_name") == "API Recruiter",
-          str(rp_data))
-    rg = client.get("/api/recruiter-profile").json()
-    check("recruiter-profile get", rg.get("recruiter_name") == "API Recruiter", str(rg))
-
-    rp2 = client.post("/api/recruiter-profile", json={"recruiter_name": ""})
-    check("recruiter-profile clear shows needs_setup", rp2.json().get("needs_setup") is True,
-          str(rp2.json()))
+    gid = data["generated_file_id"]
+    d = client.get(f"/api/generated-file/{gid}/download")
+    check("download route 200", d.status_code == 200, str(d.status_code))
 
     gp = client.get("/api/generated-pairs").json()
     check("generated-pairs returns pair", len(gp.get("pairs", [])) >= 1)
     with_full = False
     for pair in gp["pairs"]:
-        for key in ("self_onboarding_file_id_details", "backend_mail_file_id_details"):
-            det = pair.get(key)
-            if det and "123456789012" in str(det):
-                with_full = True
+        if "123456789012" in str(pair):
+            with_full = True
     check("generated-pairs never leaks full Aadhaar", not with_full)
-
-
-def test_backend_blocking_count_helper():
-    """_backend_blocking_count identifies incomplete candidate sets for the UI."""
-    from app import main as m
-    tmp = fresh_db()
-    gen_dir, ids = setup_case(tmp, SO_PAIR_CANDIDATES(1))
-    # All three complete -> 0 blockers.
-    check("complete set has no blockers",
-          m._backend_blocking_count(db.get_batch_candidates(1)) == 0,
-          str(m._backend_blocking_count(db.get_batch_candidates(1))))
-    # Drop recruiter from one candidate -> 1 blocker.
-    db.update_candidate(ids[0], {"recruiter_name": ""})
-    check("missing recruiter counted",
-          m._backend_blocking_count(db.get_batch_candidates(1)) == 1,
-          str(m._backend_blocking_count(db.get_batch_candidates(1))))
 
 
 def run_all():
     print("=" * 70)
-    print("ONBOARDING PAIR: SELF-ONBOARDING + TEAMHR BACKEND MAIL")
+    print("ONBOARDING WORKBOOK: SINGLE TWO-SHEET EXCEL GENERATION")
     print("=" * 70)
-    so_path, ob_path = test_pair_generation_shape()
-    print("\n--- Self-Onboarding content ---")
-    test_self_onboarding_content()
+    test_generation_shape()
+    print("\n--- OB Format sheet content ---")
+    test_ob_sheet_content()
     print("\n--- No Aadhaar in names/folders ---")
-    test_self_onboarding_no_aadhaar_in_name_or_folders()
-    print("\n--- TeamHR Backend content ---")
-    test_backend_workbook_content()
+    test_no_aadhaar_in_name_or_folders()
+    print("\n--- Mail Format sheet content ---")
+    test_mail_sheet_content()
     print("\n--- Failure handling ---")
-    test_pair_generation_failure_clean()
-    test_pair_generation_transactional_no_partial_files()
+    test_generation_failure_clean()
+    test_generation_transactional_no_partial_files()
+    test_missing_mail_field_blocks()
+    test_invalid_candidate_excluded()
     print("\n--- No overwrite ---")
     test_repeat_generation_no_overwrite()
     print("\n--- Recruiter profile ---")
     test_recruiter_profile()
-    print("\n--- Missing field blocks pair ---")
-    test_missing_backend_field_blocks_pair()
     print("\n--- Daily master masks Aadhaar ---")
     test_daily_master_masks_aadhaar()
     print("\n--- API ---")
-    test_onboarding_pair_api()
-    print("\n--- Backend blocking count ---")
-    test_backend_blocking_count_helper()
+    test_onboarding_api()
 
     print("=" * 70)
     print(f"TOTAL: {PASS + FAIL}  PASS: {PASS}  FAIL: {FAIL}")

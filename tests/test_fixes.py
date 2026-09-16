@@ -260,8 +260,8 @@ def test_pallavi_smart_upload_precedence():
           f"operation = Last Mile (got {res['operation']!r})")
     check(res["role"]["value"] == "LM - Sorter",
           f"role = LM - Sorter (got {res['role']['value']!r})")
-    check(res["facility"]["value"] == "PeenyaHub_BLR",
-          f"facility = PeenyaHub_BLR (got {res['facility']['value']!r})")
+    check(res["facility"]["value"] == "Peenya Hub",
+          f"facility = Peenya Hub (got {res['facility']['value']!r})")
     check(not res["facility"]["value"].endswith("_PL"),
           f"facility is NOT an FM/_PL hub (got {res['facility']['value']!r})")
     check(res["salary"]["value"] == 18000,
@@ -303,9 +303,9 @@ def test_smart_conflict_keeps_explicit_operation():
 def test_smart_hub_suffix_fallback_only_when_operation_unknown():
     print("Test: hub-suffix inference used only when LM/FM not explicit")
     # No role/operation text, only a hub phrase -> hub-suffix inference allowed.
-    r = rules.resolve_smart_onboarding(None, "Whitefield-PL")
+    r = rules.resolve_smart_onboarding(None, "NelamangalaHub_BLR_PL")
     check(r["operation_known"] is False, "operation not known without role text")
-    check(r["facility"] == "WhitefieldHub_BLR_PL",
+    check(r["facility"] == "NelamangalaHub_BLR_PL",
           f"hub-suffix fallback resolves _PL hub (got {r['facility']!r})")
     check(r["cost_code"] == "4441", f"fallback infers FM 4441 (got {r['cost_code']!r})")
 
@@ -352,18 +352,18 @@ def test_a_prem_myntra_facility_banaswadi():
 
 def test_b_pallavi_timestamp_salary():
     """TEST B — PALLAVI: 'LM sorter' + 'Peenya hub' + '18k salary 11:25 am'
-    must resolve to 4421 / LM - Sorter / PeenyaHub_BLR / 18000, never
-    LM - Team Leader, never PeenyaHub_BLR_PL, and the raw salary text with
+    must resolve to 4421 / LM - Sorter / Peenya Hub / 18000, never
+    LM - Team Leader, never an FM/_PL facility, and the raw salary text with
     timestamp must not leak into the value."""
     print("TEST B — PALLAVI (timestamp-safe salary + _PL hard reject)")
     r = rules.resolve_smart_onboarding("LM sorter", "Peenya hub")
     check(r["cost_code"] == "4421", f"cost_code = 4421 (got {r['cost_code']!r})")
     check(r["role"] == "LM - Sorter", f"role = LM - Sorter (got {r['role']!r})")
     check(r["role"] != "LM - Team Leader", "role is NOT LM - Team Leader")
-    check(r["facility"] == "PeenyaHub_BLR",
-          f"facility = PeenyaHub_BLR (got {r['facility']!r})")
+    check(r["facility"] == "Peenya Hub",
+          f"facility = Peenya Hub (got {r['facility']!r})")
     check(not r["facility"].endswith("_PL"),
-          f"facility is NOT PeenyaHub_BLR_PL (got {r['facility']!r})")
+          f"facility is NOT an FM/_PL facility (got {r['facility']!r})")
 
 
 def test_b_pallavi_end_to_end_timestamp():
@@ -387,29 +387,29 @@ def test_b_pallavi_end_to_end_timestamp():
           f"cost_code = 4421 (got {res['cost_code']['value']!r})")
     check(res["role"]["value"] == "LM - Sorter",
           f"role = LM - Sorter (got {res['role']['value']!r})")
-    check(res["facility"]["value"] == "PeenyaHub_BLR",
-          f"facility = PeenyaHub_BLR (got {res['facility']['value']!r})")
-    check(res["facility"]["value"] != "PeenyaHub_BLR_PL",
-          "facility is NOT PeenyaHub_BLR_PL")
+    check(res["facility"]["value"] == "Peenya Hub",
+          f"facility = Peenya Hub (got {res['facility']['value']!r})")
+    check(not res["facility"]["value"].endswith("_PL"),
+          "facility is NOT an FM/_PL hub")
     check(res["salary"]["value"] == 18000,
           f"salary = 18000 (got {res['salary']['value']!r})")
     check("11:25" not in str(res["salary"].get("display", "")),
           f"salary display has no timestamp (got {res['salary'].get('display')!r})")
-    check(res["facility"]["value"] == "PeenyaHub_BLR",
-          "facility stays PeenyaHub_BLR")
+    check(res["facility"]["value"] == "Peenya Hub",
+          "facility stays Peenya Hub")
 
 
 # ── TEST C: RENUKA (keep working) ─────────────────────────────────────────
 
 def test_c_renuka_still_works():
     """TEST C — RENUKA: 'LM sorter' + 'Nelamangala' + 15500
-    must KEEP resolving to 4421 / LM - Sorter / NelamangalaHub_BLR / 15500."""
+    must KEEP resolving to 4421 / LM - Sorter / BLR/NLM / 15500."""
     print("TEST C — RENUKA (keep working)")
     r = rules.resolve_smart_onboarding("LM sorter", "Nelamangala")
     check(r["cost_code"] == "4421", f"cost_code = 4421 (got {r['cost_code']!r})")
     check(r["role"] == "LM - Sorter", f"role = LM - Sorter (got {r['role']!r})")
-    check(r["facility"] == "NelamangalaHub_BLR",
-          f"facility = NelamangalaHub_BLR (got {r['facility']!r})")
+    check(r["facility"] == "BLR/NLM",
+          f"facility = BLR/NLM (got {r['facility']!r})")
 
 
 def test_needs_attention_not_flip_pallavi_pl():
@@ -538,15 +538,15 @@ def test_setb_prexo_rejected_keeps_myntra():
 
 
 def test_setb_exact_pl_hub_infers_fm():
-    """B11: 'sorter' + exact PeenyaHub_BLR_PL infers FM/4441 (facility evidence
-    before role-default), even though 'sorter' alone defaults to LM."""
+    """B11: 'sorter' + exact NelamangalaHub_BLR_PL infers FM/4441 (facility
+    evidence before role-default), even though 'sorter' alone defaults to LM."""
     print("Test: exact _PL hub infers First Mile / 4441")
-    r = rules.resolve_smart_onboarding("sorter", "PeenyaHub_BLR_PL")
+    r = rules.resolve_smart_onboarding("sorter", "NelamangalaHub_BLR_PL")
     check(r["entity"] == "Flipkart", f"B11 entity Flipkart (got {r['entity']!r})")
     check(r["cost_code"] == "4441", f"B11 cost 4441 (got {r['cost_code']!r})")
     check(r["role"] == "FM - Sorter", f"B11 role FM - Sorter (got {r['role']!r})")
-    check(r["facility"] == "PeenyaHub_BLR_PL",
-          f"B11 hub PeenyaHub_BLR_PL (got {r['facility']!r})")
+    check(r["facility"] == "NelamangalaHub_BLR_PL",
+          f"B11 hub NelamangalaHub_BLR_PL (got {r['facility']!r})")
     check(r["operation_known"] is False, "B11 operation inferred, not explicit")
 
 
@@ -560,13 +560,12 @@ def test_setb_explicit_lm_beats_pl_suffix():
 
 
 def test_setb_exact_non_pl_hub_infers_lm():
-    """B12: 'delivery' + exact PeenyaHub_BLR (no _PL) infers LM/4421, and the
-    exact hub is not overshadowed by its _PL variant."""
+    """B12: 'delivery' + exact Peenya Hub (no _PL) infers LM/4421."""
     print("Test: exact non-_PL hub infers Last Mile / 4421")
     r = rules.resolve_smart_onboarding("delivery", "PeenyaHub_BLR")
     check(r["cost_code"] == "4421", f"B12 cost 4421 (got {r['cost_code']!r})")
-    check(r["facility"] == "PeenyaHub_BLR",
-          f"B12 hub PeenyaHub_BLR (got {r['facility']!r})")
+    check(r["facility"] == "Peenya Hub",
+          f"B12 hub Peenya Hub (got {r['facility']!r})")
 
 
 if __name__ == "__main__":

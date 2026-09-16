@@ -426,6 +426,7 @@ def test_status_counts():
     st = admin_master.get_master_status()
     excel = st["excel_facilities"]
     before_admin = st["admin_facilities"]
+    before_effective = st["effective_facilities"]
     check("status has excel_facilities", excel > 0, st)
     r = admin_master.add_facility({
         "facility_name": "StatusHub", "location_code": "BLR/S",
@@ -434,7 +435,8 @@ def test_status_counts():
     st2 = admin_master.get_master_status()
     check("admin_facilities incremented",
           st2["admin_facilities"] == before_admin + 1, st2)
-    check("effective_facilities grew", st2["effective_facilities"] >= excel + 1, st2)
+    check("effective_facilities grew",
+          st2["effective_facilities"] == before_effective + 1, st2)
     check("overrides count tracks matching excel names",
           isinstance(st2.get("overrides"), int), st2)
 

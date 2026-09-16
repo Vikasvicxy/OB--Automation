@@ -130,31 +130,20 @@
         </section>
 
         <section aria-label="Generation" class="settings-section" style="margin-top:32px;">
-            <h3 class="settings-heading">Generate Onboarding Files</h3>
+            <h3 class="settings-heading">Generate Onboarding Excel</h3>
             <div class="gen-meta">
-                <p>Input template configured: <strong>{% if template_configured %}<span style="color:var(--accent-green);">Yes</span>{% else %}<span style="color:var(--accent-red);">No</span>{% endif %}</strong></p>
-                <p>Backend template configured: <strong>{% if backend_template_configured %}<span style="color:var(--accent-green);">Yes</span>{% else %}<span style="color:var(--accent-red);">No</span>{% endif %}</strong></p>
-                <p>Recruiter profile: <strong>{{ recruiter_name or 'NOT SET' }}</strong> {% if not recruiter_name %}<a href="/settings">Set it in Settings</a>{% endif %}</p>
+                <p>Excel Generation template configured: <strong>{% if template_configured %}<span style="color:var(--accent-green);">Yes</span>{% else %}<span style="color:var(--accent-red);">No</span>{% endif %}</strong></p>
                 <p>Output folder: <code>{{ output_base_dir }}</code></p>
                 {% if backend_blocking %}
-                <p style="color:var(--accent-red);">Backend workbook is blocked for {{ backend_blocking }} candidate(s) (missing Recruiter / DOJ / Gender / PIN). Review and complete the fields first.</p>
+                <p style="color:var(--accent-red);">Mail-sheet data is incomplete for {{ backend_blocking }} candidate(s) (missing DOJ / Salary / Aadhaar / DOB / Address / PIN / Gender). Review and complete the fields first.</p>
                 {% endif %}
             </div>
-            <button id="btnGenerate" class="btn btn-primary" {% if not template_configured or not backend_template_configured or (backend_blocking and backend_blocking > 0) %}disabled title="Templates must be configured and backend fields completed"{% endif %}>Generate Onboarding Files</button>
+            <button id="btnGenerate" class="btn btn-primary" {% if not template_configured or (backend_blocking and backend_blocking > 0) %}disabled title="Template must be configured and mail fields completed"{% endif %}>Generate Excel</button>
 
             <div id="pairResult" style="display:none;margin-top:18px;">
                 <div class="kpi-grid" style="grid-template-columns:1fr 1fr;">
                     <div class="kpi-card">
-                        <div class="kpi-label">Self-Onboarding Workbook</div>
-                        <div class="kpi-desc" id="pairSoName" style="margin:8px 0;word-break:break-all;">&mdash;</div>
-                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-                            <button class="btn btn-sm btn-outline" data-open-file="pairSoId">Open File</button>
-                            <button class="btn btn-sm btn-outline" data-open-folder="pairSoId">Open Folder</button>
-                            <button class="btn btn-sm btn-outline" data-copy-path="pairSoId">Copy Path</button>
-                        </div>
-                    </div>
-                    <div class="kpi-card">
-                        <div class="kpi-label">TeamHR Backend Mail Workbook</div>
+                        <div class="kpi-label">Onboarding Workbook (OB Format + Mail Format)</div>
                         <div class="kpi-desc" id="pairObName" style="margin:8px 0;word-break:break-all;">&mdash;</div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;">
                             <button class="btn btn-sm btn-outline" data-open-file="pairObId">Open File</button>
@@ -162,10 +151,14 @@
                             <button class="btn btn-sm btn-outline" data-copy-path="pairObId">Copy Path</button>
                         </div>
                     </div>
-                </div>
-                <div style="margin-top:14px;padding:12px;background:#f8fafc;border-radius:var(--radius-sm);font-size:0.85rem;line-height:1.6;">
-                    <strong>Self-Onboarding:</strong> Manually upload this file to eSampark.<br>
-                    <strong>TeamHR Backend:</strong> Manually email this file to the backend team.
+                    <div class="kpi-card">
+                        <div class="kpi-label">Next Step</div>
+                        <div class="kpi-desc" style="margin:8px 0;line-height:1.6;font-size:0.85rem;">
+                            Upload this file to eSampark (Self Onboarding)<br>
+                            and email it to the Group Ops / backend team.<br>
+                            <em>Do not re-generate a second copy for the same batch.</em>
+                        </div>
+                    </div>
                 </div>
                 <p style="margin-top:12px;"><a href="/generated-files" class="btn btn-outline btn-sm">Open Generated Files &rarr;</a></p>
             </div>
@@ -245,8 +238,8 @@
             if (btnGen) {
                 btnGen.addEventListener("click", function () {
                     btnGen.disabled = true;
-                    btnGen.textContent = "Generating both workbooks\u2026";
-                    fetch("/api/generate-onboarding-pair", {
+                    btnGen.textContent = "Generating\u2026";
+                    fetch("/api/generate-excel", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ batch_id: BATCH_ID, only_ready: true })
@@ -254,37 +247,26 @@
                         .then(function (r) { return r.json(); })
                         .then(function (data) {
                             if (data.success) {
-                                var rp = document.getElementById("pairResult");
-                                document.getElementById("pairSoName").textContent =
-                                    data.self_onboarding_filename || data.filename || "";
                                 document.getElementById("pairObName").textContent =
-                                    data.backend_filename || "";
-                                var soBtn = document.querySelector('[data-open-file="pairSoId"]');
-                                if (soBtn) {
-                                    soBtn.setAttribute("data-open-file", data.generated_file_id || data.file_id || "");
-                                    soBtn.disabled = !data.generated_file_id && !data.file_id;
-                                }
+                                    data.filename || data.file_path || "";
                                 var obBtn = document.querySelector('[data-open-file="pairObId"]');
                                 if (obBtn) {
-                                    obBtn.setAttribute("data-open-file", data.backend_file_id || "");
-                                    obBtn.disabled = !data.backend_file_id;
+                                    obBtn.setAttribute("data-open-file", data.generated_file_id || data.file_id || "");
+                                    obBtn.disabled = !data.generated_file_id && !data.file_id;
                                 }
-                                window._pairFilePaths = {
-                                    pairSoId: data.file_path || "",
-                                    pairObId: data.backend_file_path || ""
-                                };
-                                rp.style.display = "";
-                                if (typeof showToast === "function") showToast("Both onboarding workbooks generated.", "success");
+                                window._pairFilePaths = { pairObId: data.file_path || "" };
+                                document.getElementById("pairResult").style.display = "";
+                                if (typeof showToast === "function") showToast("Onboarding workbook generated.", "success");
                             } else {
                                 if (typeof showToast === "function") showToast(data.error || "Generation failed", "error");
                                 btnGen.disabled = false;
-                                btnGen.textContent = "Generate Onboarding Files";
+                                btnGen.textContent = "Generate Excel";
                             }
                         })
                         .catch(function () {
                             if (typeof showToast === "function") showToast("Network error", "error");
                             btnGen.disabled = false;
-                            btnGen.textContent = "Generate Onboarding Files";
+                            btnGen.textContent = "Generate Excel";
                         });
                 });
             }

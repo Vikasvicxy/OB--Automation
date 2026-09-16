@@ -11,6 +11,14 @@
         .recovery-banner { display:flex; align-items:center; gap:12px; background:#fffbeb; border:1px solid #fde68a; border-radius:var(--radius); padding:12px 20px; margin-bottom:20px; }
         .recovery-icon { font-size:1.2rem; color:var(--accent-amber); }
         .recovery-text { font-weight:500; font-size:0.9rem; flex:1; }
+        .hub-drop { position:relative; z-index:5; overflow:auto; max-height:220px; background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:0 6px 18px rgba(0,0,0,0.12); margin-top:4px; }
+        .hub-drop .hub-opt { display:block; width:100%; text-align:left; padding:8px 12px; border:0; background:none; cursor:pointer; font-size:0.85rem; }
+        .hub-drop .hub-opt:hover, .hub-drop .hub-opt:focus { background:#f1f5f9; outline:none; }
+        .hub-drop .hub-opt .hub-main { font-weight:600; }
+        .hub-drop .hub-opt .hub-sub { color:var(--text-secondary); font-size:0.75rem; margin-top:2px; word-break:break-all; }
+        .hub-drop .hub-empty { padding:10px 12px; color:var(--text-secondary); font-size:0.82rem; }
+        .session-bar { display:flex; align-items:center; gap:12px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius); padding:12px 18px; margin-top:20px; }
+        .session-bar .session-count { font-weight:700; color:#1d4ed8; }
     </style>
 </head>
 <body>
@@ -21,7 +29,7 @@
         <header class="topbar">
             <div>
                 <h1 class="page-title">New Onboarding</h1>
-                <p class="page-subtitle">Paste (Ctrl+V), upload or drag screenshots / Aadhaar / PDF &mdash; review, approve, then generate both workbooks</p>
+                <p class="page-subtitle">Paste (Ctrl+V), upload or drag screenshots / Aadhaar / PDF &mdash; review, approve, then generate the Onboarding workbook</p>
             </div>
         </header>
 
@@ -138,15 +146,17 @@
                     <div class="evidence-details" id="evDobDetail" style="display:none"></div>
                 </div>
 
-                <!-- Facility -->
+                <!-- Facility (typeahead from master rows) -->
                 <div class="rf-field">
                     <label class="rf-label" for="rfFacility">Facility / Hub</label>
-                    <input type="text" id="rfFacility" class="global-search" style="width:100%">
+                    <input type="text" id="rfFacility" class="global-search" autocomplete="off" style="width:100%;position:relative;z-index:3;" placeholder="Start typing a hub name">
                     <div class="rf-meta">
+                        <span class="badge-readonly" id="rfLocationBadge" style="display:none;"></span>
                         <span class="cf-badge" id="cfFacility"></span>
                         <span class="rf-source" id="srcFacility"></span>
                         <button type="button" class="evidence-toggle" id="evFacility" style="display:none">Why?</button>
                     </div>
+                    <div id="rfFacilityDrop" class="hub-drop" style="display:none;"></div>
                     <div class="evidence-details" id="evFacilityDetail" style="display:none"></div>
                 </div>
 
@@ -172,15 +182,6 @@
                         <button type="button" class="evidence-toggle" id="evSalary" style="display:none">Why?</button>
                     </div>
                     <div class="evidence-details" id="evSalaryDetail" style="display:none"></div>
-                </div>
-
-                <!-- Recruiter Name -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfRecruiter">Recruiter Name</label>
-                    <input type="text" id="rfRecruiter" class="global-search" style="width:100%" placeholder="From Settings otherwise">
-                    <div class="rf-meta">
-                        <span class="badge-readonly">Used in Backend Mail</span>
-                    </div>
                 </div>
 
                 <!-- Date of Joining -->
@@ -230,15 +231,6 @@
                     <div class="evidence-details" id="evPinCodeDetail" style="display:none"></div>
                 </div>
 
-                <!-- UAN -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfUan">UAN No</label>
-                    <input type="text" id="rfUan" class="global-search" style="width:100%" placeholder="Optional">
-                    <div class="rf-meta">
-                        <span class="badge-readonly">Optional</span>
-                    </div>
-                </div>
-
                 <!-- Cost Code -->
                 <div class="rf-field">
                     <label class="rf-label" for="rfCostCode">Cost Code</label>
@@ -258,9 +250,12 @@
                 <!-- Aadhaar (masked, read-only) -->
                 <div class="rf-field">
                     <label class="rf-label" for="rfAadhaar">Aadhaar (masked)</label>
-                    <input type="text" id="rfAadhaar" class="global-search" style="width:100%" readonly>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="rfAadhaar" class="global-search" style="width:100%" readonly>
+                        <button type="button" id="btnRevealAadhaar" class="btn btn-sm btn-outline" style="white-space:nowrap;">Reveal</button>
+                    </div>
                     <div class="rf-meta">
-                        <span class="badge-readonly">Auto-masked</span>
+                        <span class="badge-readonly">Auto-masked; full number never saved in any draft</span>
                     </div>
                 </div>
 
@@ -282,6 +277,13 @@
                 <div class="rf-actions-spacer"></div>
                 <button type="button" class="btn btn-secondary" id="btnSaveDraft">Save Draft</button>
                 <button type="button" class="btn btn-primary" id="btnApprove">Save &amp; Approve</button>
+            </div>
+
+            <div class="session-bar" id="sessionBar" style="display:none;">
+                <span>The <span class="session-count" id="sessionCount">0</span> candidate(s) approved in this session are saved.</span>
+                <span class="rf-actions-spacer" style="flex:1;"></span>
+                <button type="button" class="btn btn-primary btn-sm" id="btnSessionGenerate">Generate Excel (<span id="sessionGenCount">0</span>)</button>
+                <button type="button" class="btn btn-sm btn-outline" id="btnSessionReset">New Session</button>
             </div>
         </section>
     </main>
@@ -315,11 +317,14 @@
 
         function snapshotSafeReview() {
             var d = extractionData || {};
+            var fac = document.getElementById("rfFacility");
             var safe = {
                 name: document.getElementById("rfName").value.trim(),
                 mobile: document.getElementById("rfMobile").value.trim(),
-                facility: document.getElementById("rfFacility").value.trim(),
-                facility_name: document.getElementById("rfFacility").value.trim(),
+                facility: fac.value.trim(),
+                facility_name: fac.value.trim(),
+                facility_ref: fac.getAttribute("data-facility-ref") || "",
+                location_code: fac.getAttribute("data-location") || "",
                 role: document.getElementById("rfRole").value.trim(),
                 designation: document.getElementById("rfRole").value.trim(),
                 cost_code: document.getElementById("rfCostCode").value.trim(),
@@ -327,12 +332,10 @@
                 operation: d.operation || "",
                 team: d.team || "",
                 facility_type: document.getElementById("rfFacilityType").value.trim(),
-                recruiter_name: document.getElementById("rfRecruiter").value.trim(),
                 doj: document.getElementById("rfDoj").value.trim(),
                 gender: document.getElementById("rfGender").value.trim(),
                 father_name: document.getElementById("rfFatherName").value.trim(),
                 pin_code: document.getElementById("rfPinCode").value.trim(),
-                uan_no: document.getElementById("rfUan").value.trim(),
                 batch_id: d.batch_id || 1,
                 candidate_number: d.candidate_number || 1,
                 candidateNum: d.candidate_number || 1
@@ -378,11 +381,13 @@
         }
 
         ["rfName", "rfMobile", "rfFacility", "rfRole", "rfSalary", "rfCostCode",
-             "rfRecruiter", "rfDoj", "rfGender", "rfFatherName", "rfPinCode", "rfUan"].forEach(function (id) {
+             "rfDoj", "rfGender", "rfFatherName", "rfPinCode"].forEach(function (id) {
             var el = document.getElementById(id);
             if (el) el.addEventListener("input", scheduleDraftSave);
             if (el) el.addEventListener("change", scheduleDraftSave);
         });
+        var rfFacilityEl = document.getElementById("rfFacility");
+        if (rfFacilityEl) rfFacilityEl.addEventListener("blur", scheduleDraftSave);
 
         fetch("/api/drafts?draft_type=smart_upload")
             .then(function (r) { return r.json(); })
@@ -404,8 +409,16 @@
             var set = function (id, val) { if (val && document.getElementById(id)) document.getElementById(id).value = val; };
             set("rfName", p.name); set("rfMobile", p.mobile); set("rfFacility", p.facility);
             set("rfRole", p.role); set("rfCostCode", p.cost_code);
-            set("rfRecruiter", p.recruiter_name); set("rfDoj", p.doj); set("rfGender", p.gender);
-            set("rfFatherName", p.father_name); set("rfPinCode", p.pin_code); set("rfUan", p.uan_no);
+            set("rfDoj", p.doj); set("rfGender", p.gender);
+            set("rfFatherName", p.father_name); set("rfPinCode", p.pin_code);
+            var fac = document.getElementById("rfFacility");
+            if (fac) {
+                if (p.facility_ref) fac.setAttribute("data-facility-ref", p.facility_ref);
+                if (p.location_code) {
+                    fac.setAttribute("data-location", p.location_code);
+                    showLocationBadge();
+                }
+            }
             var d = extractionData || {};
             d.entity = p.entity || d.entity || "";
             d.operation = p.operation || d.operation || "";
@@ -642,6 +655,7 @@
             setField("rfMobile", data.mobile);
             setField("rfDob", data.dob);
             setField("rfFacility", data.facility);
+            setTimeout(resolveFacilityFromValue, 0);
             setField("rfRole", data.role);
             setField("rfCostCode", data.cost_code);
             setField("rfAddress", data.address);
@@ -650,17 +664,18 @@
             setField("rfGender", data.gender);
             setField("rfFatherName", data.father_name);
             setField("rfPinCode", data.pin_code);
-            setField("rfUan", data.uan_no);
 
-            var recruiterInput = document.getElementById("rfRecruiter");
-            if (!recruiterInput.value.trim() && data.recruiter_name) {
-                recruiterInput.value = data.recruiter_name;
-            }
-            if (!recruiterInput.value.trim()) {
-                recruiterInput.value = "{{ recruiter_name | default('', true) | e }}";
+            var dojInput = document.getElementById("rfDoj");
+            if (dojInput && !dojInput.value.trim()) {
+                dojInput.value = todayStr();
+                if (typeof showToast === "function") showToast("Date of Joining defaulted to today. Adjust if needed.", "info");
             }
 
-            document.getElementById("rfAadhaar").value = data.aadhaar_masked || "XXXX XXXX ?";
+            var aadhaarInput = document.getElementById("rfAadhaar");
+            aadhaarInput.value = data.aadhaar_masked || "XXXX XXXX ?";
+            aadhaarInput.setAttribute("data-masked", aadhaarInput.value);
+            var revealBtn = document.getElementById("btnRevealAadhaar");
+            if (revealBtn) revealBtn.textContent = "Reveal";
 
             var ft = data.facility_type || "";
             document.getElementById("rfFacilityType").value = ft;
@@ -767,6 +782,226 @@
             };
         }
 
+        /* ── Facility typeahead (master rows, incl. duplicate displays) ──── */
+        function escapeHtml(s) {
+            return String(s == null ? "" : s)
+                .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+        }
+
+        function todayStr() {
+            var now = new Date();
+            var mm = String(now.getMonth() + 1).padStart(2, "0");
+            var dd = String(now.getDate()).padStart(2, "0");
+            return dd + "/" + mm + "/" + now.getFullYear();
+        }
+
+        function showLocationBadge() {
+            var fac = document.getElementById("rfFacility");
+            var badge = document.getElementById("rfLocationBadge");
+            if (!fac || !badge) return;
+            var loc = fac.getAttribute("data-location") || "";
+            var cc = fac.getAttribute("data-cost-code") || "";
+            if (loc) {
+                badge.style.display = "";
+                badge.textContent = (cc ? "Cost Code " + cc + " · " : "Location ") + loc +
+                    (fac.getAttribute("data-duplicate") === "1" ? " (select the correct hub)" : "");
+                badge.className = "badge-readonly";
+            } else {
+                badge.style.display = "none";
+            }
+        }
+
+        function pickFacilityRow(h, input) {
+            input.value = h.facility_name;
+            input.setAttribute("data-facility-ref", h.facility_ref || "");
+            input.setAttribute("data-location", h.location || "");
+            input.setAttribute("data-cost-code", h.cost_code || "");
+            input.setAttribute("data-entity", h.entity || "");
+            input.setAttribute("data-operation", h.operation || "");
+            input.setAttribute("data-duplicate", h.duplicate ? "1" : "0");
+            var ccInput = document.getElementById("rfCostCode");
+            if ((!ccInput.value.trim()) && h.cost_code) {
+                ccInput.value = h.cost_code;
+                if (h.operation) {
+                    var d = extractionData || {};
+                    d.operation = h.operation;
+                    d.entity = h.entity || "";
+                }
+            }
+            var ftInput = document.getElementById("rfFacilityType");
+            if (!ftInput.value.trim() && h.cost_code) {
+                ftInput.value = (h.cost_code === "4441") ? "Pickup Hub" : "Delivery Hub";
+            }
+            showLocationBadge();
+            hideFacilityDrop();
+        }
+
+        function hideFacilityDrop() {
+            var drop = document.getElementById("rfFacilityDrop");
+            if (drop) drop.style.display = "none";
+        }
+
+        var facilitySearchTimer = null;
+        var facilityInput = document.getElementById("rfFacility");
+        if (facilityInput) {
+            facilityInput.addEventListener("input", function () {
+                var q = facilityInput.value.trim();
+                if (facilitySearchTimer) clearTimeout(facilitySearchTimer);
+                if (q.length < 2) { hideFacilityDrop(); return; }
+                facilitySearchTimer = setTimeout(function () {
+                    var params = new URLSearchParams({ query: q });
+                    var cc = document.getElementById("rfCostCode").value.trim();
+                    if (cc) params.set("cost_code", cc);
+                    fetch("/api/search-hubs?" + params.toString())
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            var rows = data.hubs || [];
+                            var drop = document.getElementById("rfFacilityDrop");
+                            if (!drop || document.activeElement !== facilityInput) return;
+                            drop.innerHTML = "";
+                            if (!rows.length) {
+                                var empty = document.createElement("div");
+                                empty.className = "hub-empty";
+                                empty.textContent = "No matching hub. Type the Facility / Hub name exactly.";
+                                drop.appendChild(empty);
+                            } else {
+                                rows.forEach(function (h, idx) {
+                                    var btn = document.createElement("button");
+                                    btn.type = "button";
+                                    btn.className = "hub-opt";
+                                    var dup = rows.filter(function (r2) { return r2.facility_name === h.facility_name; }).length > 1;
+                                    var d = h.facility_ref || "";
+                                    btn.innerHTML = '<span class="hub-main">' +
+                                        escapeHtml(h.facility_name) + "</span>" +
+                                        '<span class="hub-sub">' + escapeHtml(h.location || "") +
+                                        (d && h.location ? " · " : "") + escapeHtml(d) +
+                                        (dup ? " · duplicate name — choose by location" : "") + "</span>";
+                                    btn.setAttribute("data-i", String(idx));
+                                    btn.addEventListener("mousedown", function (ev) {
+                                        ev.preventDefault();
+                                        var row = rows[parseInt(btn.getAttribute("data-i"), 10)];
+                                        row.duplicate = dup;
+                                        pickFacilityRow(row, facilityInput);
+                                    });
+                                    drop.appendChild(btn);
+                                });
+                            }
+                            drop.style.display = "";
+                        })
+                        .catch(function () { hideFacilityDrop(); });
+                }, 350);
+            });
+            facilityInput.addEventListener("blur", function () {
+                setTimeout(hideFacilityDrop, 200);
+                resolveFacilityFromValue();
+            });
+        }
+
+        function resolveFacilityFromValue() {
+            var fac = document.getElementById("rfFacility");
+            if (!fac || !fac.value.trim()) return;
+            var params = new URLSearchParams({ facility: fac.value.trim() });
+            var loc = fac.getAttribute("data-location") || "";
+            var ref = fac.getAttribute("data-facility-ref") || "";
+            if (!loc && !ref) {
+                fetch("/api/location?" + params.toString())
+                    .then(function (r) { return r.json(); })
+                    .then(function (res) {
+                        if (res.location || res.facility_ref) {
+                            if (res.facility_ref) fac.setAttribute("data-facility-ref", res.facility_ref);
+                            if (res.location) fac.setAttribute("data-location", res.location);
+                            if (res.cost_code) fac.setAttribute("data-cost-code", res.cost_code);
+                            showLocationBadge();
+                        } else {
+                            showLocationBadge();
+                        }
+                    })
+                    .catch(function () { showLocationBadge(); });
+            } else {
+                showLocationBadge();
+            }
+        }
+
+        var revealBtn = document.getElementById("btnRevealAadhaar");
+        if (revealBtn) {
+            revealBtn.addEventListener("click", function () {
+                var input = document.getElementById("rfAadhaar");
+                var d = extractionData || {};
+                var revealed = !input.getAttribute("data-full") && d.aadhaar_number;
+                if (revealed) {
+                    input.value = d.aadhaar_number;
+                    input.setAttribute("data-full", "1");
+                    revealBtn.textContent = "Mask";
+                } else {
+                    input.value = input.getAttribute("data-masked") || "XXXX XXXX ?";
+                    input.removeAttribute("data-full");
+                    revealBtn.textContent = "Reveal";
+                }
+            });
+        }
+
+        /* ── Multi-candidate session: approved counts + Generate Excel (N) ── */
+        function sessionStore() {
+            var raw = sessionStorage.getItem("thr-onboard-session");
+            try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
+        }
+        function sessionPersist(obj) {
+            sessionStorage.setItem("thr-onboard-session", JSON.stringify(obj));
+        }
+        function sessionAdd(batchId) {
+            var s = sessionStore();
+            s[batchId] = (s[batchId] || 0) + 1;
+            sessionPersist(s);
+            renderSessionBar();
+        }
+        function sessionReset() {
+            sessionStorage.removeItem("thr-onboard-session");
+            renderSessionBar();
+        }
+        function renderSessionBar() {
+            var s = sessionStore();
+            var bar = document.getElementById("sessionBar");
+            var total = 0, lastBatch = null;
+            for (var k in s) { total += s[k]; lastBatch = parseInt(k, 10); }
+            document.getElementById("sessionCount").textContent = String(total);
+            document.getElementById("sessionGenCount").textContent = String(total);
+            if (total > 0 && bar) {
+                bar.style.display = "";
+                btnSessionGenerate.setAttribute("data-batch", String(lastBatch || 1));
+                btnSessionGenerate.disabled = false;
+            } else if (bar) {
+                bar.style.display = "none";
+            }
+        }
+        var btnSessionGenerate = document.getElementById("btnSessionGenerate");
+        if (btnSessionGenerate) {
+            btnSessionGenerate.addEventListener("click", function () {
+                var batchId = parseInt(btnSessionGenerate.getAttribute("data-batch") || "1", 10);
+                btnSessionGenerate.disabled = true;
+                fetch("/api/generate-excel", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ batch_id: batchId, only_ready: true })
+                })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.success && data.generated_file_id) {
+                            if (typeof showToast === "function") showToast("Onboarding workbook generated. Downloading\u2026", "success");
+                            window.location.href = "/api/generated-file/" + data.generated_file_id + "/download";
+                        } else {
+                            if (typeof showToast === "function") showToast(data.error || "Generation failed. Open Batch Review for details.", "error");
+                            btnSessionGenerate.disabled = false;
+                        }
+                    })
+                    .catch(function () {
+                        if (typeof showToast === "function") showToast("Network error", "error");
+                        btnSessionGenerate.disabled = false;
+                    });
+            });
+        }
+        document.getElementById("btnSessionReset").addEventListener("click", sessionReset);
+
         /* ── Back / Cancel ──────────────────────────────────────────────── */
         function backToUpload() {
             reviewSection.style.display = "none";
@@ -780,13 +1015,16 @@
         /* ── Save Draft / Save & Approve ────────────────────────────────── */
         function buildPayload() {
             var d = extractionData || {};
+            var fac = document.getElementById("rfFacility");
             return {
                 name: document.getElementById("rfName").value.trim(),
                 mobile: document.getElementById("rfMobile").value.trim(),
                 dob: document.getElementById("rfDob").value.trim(),
                 address: document.getElementById("rfAddress").value.trim(),
-                facility: document.getElementById("rfFacility").value.trim(),
-                facility_name: document.getElementById("rfFacility").value.trim(),
+                facility: fac.value.trim(),
+                facility_name: fac.value.trim(),
+                facility_ref: fac.getAttribute("data-facility-ref") || "",
+                location_code: fac.getAttribute("data-location") || "",
                 role: document.getElementById("rfRole").value.trim(),
                 designation: document.getElementById("rfRole").value.trim(),
                 salary_normalized: document.getElementById("rfSalary").value.trim(),
@@ -796,12 +1034,10 @@
                 operation: d.operation || "",
                 team: d.team || "",
                 facility_type: document.getElementById("rfFacilityType").value.trim(),
-                recruiter_name: document.getElementById("rfRecruiter").value.trim(),
                 doj: document.getElementById("rfDoj").value.trim(),
                 gender: document.getElementById("rfGender").value.trim(),
                 father_name: document.getElementById("rfFatherName").value.trim(),
                 pin_code: document.getElementById("rfPinCode").value.trim(),
-                uan_no: document.getElementById("rfUan").value.trim(),
                 aadhaar_number: d.aadhaar_number || "",
                 batch_id: d.batch_id || 1,
                 candidate_number: d.candidate_number || 1,
@@ -876,8 +1112,9 @@
                     return;
                 }
                 if (typeof showToast === "function") {
-                    showToast("Candidate approved (ID " + res.id + "). Generate the workbooks from Batch Review.", "success");
+                    showToast("Candidate approved (ID " + res.id + "). Click Generate Excel to download the workbook.", "success");
                 }
+                sessionAdd(res.batch_id || 1);
                 backToUpload();
                 files = [];
                 renderFileGrid();
@@ -889,6 +1126,7 @@
                 if (typeof showToast === "function") showToast("Approval failed: " + err, "error");
             });
         });
+    renderSessionBar();
     })();
     </script>
 </body>

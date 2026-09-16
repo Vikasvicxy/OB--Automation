@@ -535,8 +535,8 @@ def test_20_set_b_honors_facility_location_semantics():
     run = val.run_all_cases("B")
     by_id = {v["case_id"]: v for v in run["verdicts"]}
     checks = {
-        "CASE B01": "BLR/PEE", "CASE B03": "BLR/NLM", "CASE B04": "BLR/NLM_PL",
-        "CASE B08": "BLR/BNM",
+        "CASE B01": "BLR/PEN", "CASE B03": "BLR/NLM", "CASE B04": "NelamangalaHub_BLR_PL",
+        "CASE B08": "BNS/BLR",
     }
     for cid, want in checks.items():
         got = by_id[cid]["actual"].get("location")
@@ -551,7 +551,7 @@ def test_21_wrong_auto_metric_counts_confident_wrong_select():
     base = dict(val.get_case("CASE B02", "B"))  # expected FM/4441
     wrong_actual = {
         "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
-        "role": "LM - Sorter", "facility": "PeenyaHub_BLR", "location": "BLR/PEE",
+        "role": "LM - Sorter", "facility": "BLR/NLM", "location": "BLR/NLM",
         "salary": 16000, "needs_review": False, "needs_attention": [],
         "role_unresolved": False,
     }
@@ -601,16 +601,21 @@ def test_29_regression_c27_unknown_myntra_hub_no_overmatch():
     check(a["needs_review"] is True, "C27 flagged Needs Review")
 
 
-def test_30_regression_c45_bare_hub_ambiguity():
-    print("\n--- 30. Regression C45: bare hub ambiguity -> Needs Review ---")
+def test_30_regression_c45_peenya_hub_only_safe_lm_review():
+    print("\n--- 30. Regression C45: Peenya hub only -> safe LM + role review ---")
     c = val.get_case("C45", "C")
     a = val.run_logic_case(c)
     v = val.evaluate_case(c, a)
     check(v["status"] == "PASS", "C45 overall PASS after fix")
-    # A bare 'Peenya hub' with no LM/FM/role must NOT auto-pick FM 4441.
-    check(a["needs_review"] is True, "C45 flagged Needs Review")
-    check(a["cost_code"] == "", "C45 did not silently choose a cost code", f"(got {a['cost_code']!r})")
-    check(not a["facility"], "C45 facility left blank", f"(got {a['facility']!r})")
+    # Peenya is last-mile-only on HubName.xlsx, so the hub alone is NOT op-
+    # ambiguous: the resolver may safely pick the LM hub/cost code, but must NOT
+    # auto-fill a role.
+    check(a["needs_review"] is True, "C45 flagged Needs Review (role missing)")
+    check(a["cost_code"] == "4421", "C45 chose the only matching Last Mile cost code",
+          f"(got {a['cost_code']!r})")
+    check(a["facility"] == "Peenya Hub", "C45 resolved to the Peenya Hub (LM only)",
+          f"(got {a['facility']!r})")
+    check(not a["role"], "C45 did not silently choose a role", f"(got {a['role']!r})")
 
 
 def test_31_regression_c46_myntra_never_flips_to_flipkart():
@@ -658,6 +663,6 @@ if __name__ == "__main__":
     test_27_set_c_no_production_candidate()
     test_28_set_c_variants_derive_master_data()
     test_29_regression_c27_unknown_myntra_hub_no_overmatch()
-    test_30_regression_c45_bare_hub_ambiguity()
+    test_30_regression_c45_peenya_hub_only_safe_lm_review()
     test_31_regression_c46_myntra_never_flips_to_flipkart()
     print(f"\nTOTAL: {PASS + FAIL}  PASS: {PASS}  FAIL: {FAIL}")

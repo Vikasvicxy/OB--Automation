@@ -131,9 +131,13 @@ def _backend_fields(data: dict) -> dict:
     """Extract the backend-only candidate fields, normalized conservatively.
 
     Empty results stay empty (the review screen resolves them); nothing is
-    invented here. Used by save-draft / confirm / approve payloads.
+    invented here. Used by save-draft / confirm / approve payloads. The Date of
+    Joining DEFAULTS to the current local date when not provided.
     """
-    doj, _ = rules.normalize_doj(data.get("doj", ""))
+    doj_raw = str(data.get("doj", "") or "").strip()
+    if not doj_raw:
+        doj_raw = _get_now()[0]
+    doj, _ = rules.normalize_doj(doj_raw)
     gender, _ = rules.normalize_gender(data.get("gender", ""))
     pin, _ = rules.normalize_pin_code(data.get("pin_code", ""))
     father, _ = rules.normalize_father_name(data.get("father_name", ""))
@@ -148,6 +152,25 @@ def _backend_fields(data: dict) -> dict:
     }
 
 
+def _facility_for_candidate(data: dict) -> dict:
+    """Resolve a candidate payload to the authoritative facility row.
+
+    Primary identity is the facility (display) text the user typed; the selected
+    row's location/facility_ref (if provided) refine the pick and are verified
+    against the master. Returns {facility_name, location, facility_ref}. A stale
+    client-supplied location can never be stored: the master row always wins.
+    """
+    facility = str(data.get("facility", data.get("facility_name", "")) or "").strip()
+    loc_hint = str(data.get("location", data.get("location_code", "")) or "").strip()
+    ref_hint = str(data.get("facility_ref", "") or "").strip()
+    resolved = master_data.resolve_facility_selection(facility, loc_hint, ref_hint)
+    return {
+        "facility_name": resolved["facility_name"] or facility,
+        "location": resolved["location"],
+        "facility_ref": resolved["facility_ref"],
+    }
+
+
 @app.post("/api/save-draft")
 async def save_draft(request: Request):
     data = await request.json()
@@ -155,6 +178,7 @@ async def save_draft(request: Request):
 
     edit_id = data.get("edit_id")
     if edit_id:
+        fc = _facility_for_candidate(data)
         updated = database.update_candidate(edit_id, {
             "name": data.get("name", ""),
             "mobile": data.get("mobile", ""),
@@ -164,9 +188,9 @@ async def save_draft(request: Request):
             "team": data.get("team", ""),
             "designation": data.get("role", data.get("designation", "")),
             "facility_type": data.get("facility_type", ""),
-            "facility": data.get("facility", ""),
-            "facility_name": data.get("facility", data.get("facility_name", "")),
-            "location_code": rules.get_location_for_facility(data.get("facility", data.get("facility_name", ""))),
+            "facility_name": fc["facility_name"],
+            "facility_ref": fc["facility_ref"],
+            "location_code": fc["location"],
             "salary": data.get("salary_normalized", data.get("salary")),
             "salary_display": data.get("salary_display", ""),
             "aadhaar_number": data.get("aadhaar_number", ""),
@@ -179,6 +203,7 @@ async def save_draft(request: Request):
                                         "Draft updated and saved.")
         return JSONResponse({"id": edit_id, "status": "draft"})
 
+    fc = _facility_for_candidate(data)
     cid = database.insert_candidate({
         "batch_id": data.get("batch_id", 1),
         "candidate_number": data.get("candidate_number", 1),
@@ -190,8 +215,9 @@ async def save_draft(request: Request):
         "team": data.get("team", ""),
         "designation": data.get("role", data.get("designation", "")),
         "facility_type": data.get("facility_type", ""),
-        "facility_name": data.get("facility", data.get("facility_name", "")),
-        "location_code": rules.get_location_for_facility(data.get("facility", data.get("facility_name", ""))),
+        "facility_name": fc["facility_name"],
+        "facility_ref": fc["facility_ref"],
+        "location_code": fc["location"],
         "salary": data.get("salary_normalized", data.get("salary")),
         "salary_display": data.get("salary_display", ""),
         "aadhaar_number": data.get("aadhaar_number", ""),
@@ -231,7 +257,13 @@ async def confirm_candidate(request: Request):
     role_resolved, _ = rules.resolve_role_for_cost_code(role_query, cost_code)
 
     facility = data.get("facility", "")
-    location_code = rules.get_location_for_facility(facility)
+    fc = master_data.resolve_facility_selection(
+        facility,
+        str(data.get("location", data.get("location_code", "")) or ""),
+        str(data.get("facility_ref", "") or ""),
+    )
+    location_code = fc["location"]
+    facility_ref = fc["facility_ref"]
 
     edit_id = data.get("edit_id")
     if edit_id:
@@ -244,8 +276,8 @@ async def confirm_candidate(request: Request):
             "team": cost_info["team"] if cost_info else "",
             "designation": role_resolved or role_query,
             "facility_type": ft_resolved or data.get("facility_type", ""),
-            "facility": facility,
-            "facility_name": facility,
+            "facility_name": fc["facility_name"] or facility,
+            "facility_ref": facility_ref,
             "location_code": location_code,
             "salary": salary_normalized,
             "salary_display": data.get("salary_display", ""),
@@ -272,7 +304,8 @@ async def confirm_candidate(request: Request):
         "team": cost_info["team"] if cost_info else "",
         "designation": role_resolved or role_query,
         "facility_type": ft_resolved or data.get("facility_type", ""),
-        "facility_name": facility,
+        "facility_name": fc["facility_name"] or facility,
+        "facility_ref": facility_ref,
         "location_code": location_code,
         "salary": salary_normalized,
         "salary_display": data.get("salary_display", ""),
@@ -340,8 +373,8 @@ async def batch_review_page(request: Request, batch_id: int = 1):
             "candidates": batch,
             "counts": counts,
             "batch_id": batch_id,
-            "template_configured": generation.template_is_configured(),
-            "backend_template_configured": generation.template_backend_is_configured(),
+            "template_configured": generation.excel_template_is_configured(),
+            "backend_template_configured": generation.excel_template_is_configured(),
             "recruiter_name": generation.get_default_recruiter_name(),
             "output_base_dir": str(generation.get_output_base_dir()),
             "generated_files": database.list_generated_files(batch_id),
@@ -352,7 +385,7 @@ async def batch_review_page(request: Request, batch_id: int = 1):
 
 
 def _backend_blocking_info(batch) -> tuple[int, dict]:
-    """Return (count, per-candidate problems) for backend blocking.
+    """Return (count, per-candidate problems) for Mail-sheet blocking.
 
     ``problems`` maps candidate_id -> list of missing-field labels.
     """
@@ -360,7 +393,7 @@ def _backend_blocking_info(batch) -> tuple[int, dict]:
         validated = generation.validate_candidates(batch)
         enriched = validated.get("rows", [])
         by_id = {c["candidate_id"]: c for c in batch}
-        result = generation.build_backend_rows(enriched, by_id)
+        result = generation.build_mail_rows(enriched, by_id)
         raw = result.get("problems", {})
         problems = {cid: msgs for cid, msgs in raw.items() if msgs}
         return len(problems), problems
@@ -618,6 +651,25 @@ async def api_generated_file_result(file_id: int):
         return JSONResponse({"error": "Result file not found on disk"}, status_code=404)
     from fastapi.responses import FileResponse
     return FileResponse(str(full), filename=Path(full).name)
+
+
+@app.get("/api/generated-file/{file_id}/download")
+async def api_generated_file_download(file_id: int):
+    """Download a generated workbook (the single Onboarding file)."""
+    gf = database.get_generated_file(file_id)
+    if gf is None:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    rel = gf.get("file_path") or ""
+    if not rel:
+        return JSONResponse({"error": "No file path"}, status_code=404)
+    base = generation.get_output_base_dir()
+    candidate_path = Path(rel)
+    full = candidate_path if candidate_path.is_absolute() else base / rel
+    if not full.exists():
+        return JSONResponse({"error": "File not found on disk"}, status_code=404)
+    from fastapi.responses import FileResponse
+    return FileResponse(str(full), filename=Path(full).name,
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 # ── Batch Detail (read-first page) ───────────────────────────────────────────
@@ -1892,21 +1944,47 @@ async def get_documents(candidate_id: Optional[int] = None):
 
 @app.get("/api/search-hubs")
 async def search_hubs(cost_code: str = "", query: str = ""):
-    hubs = rules.get_hubs_for_cost_code(cost_code)
+    """Facility typeahead: primary search text is the display name (Column C);
+    the system reference (Column A) and location (Column B) are also searched.
+    Returns EXACT master rows (never invented values) — including the row's
+    location and facility_ref — so the UI can bind a row exactly and duplicate
+    display names can be offered as explicit choices.
+    """
     if query:
-        results = rules.fuzzy_find_hub(query, hubs, top_n=5)
+        rows = master_data.fuzzy_search_facilities(query, cost_code, top_n=5)
     else:
-        results = hubs[:20]
+        rows = master_data.get_facility_rows(cost_code)[:20]
+    hubs = []
+    locations: dict[str, str] = {}
+    for r in rows:
+        hubs.append({
+            "facility_name": r["facility_name"],
+            "location": r.get("location", ""),
+            "facility_ref": r.get("facility_ref", ""),
+            "facility": r.get("facility_name", ""),
+            "hub_key": r.get("hub_key", ""),
+            "cost_code": r.get("cost_code", ""),
+            "entity": r.get("entity", ""),
+            "operation": r.get("operation", ""),
+            "facility_type": r.get("facility_type", ""),
+        })
+        locations[r["facility_name"]] = r.get("location", "")
     return JSONResponse({
-        "hubs": results,
-        "locations": {h: rules.get_location_for_facility(h) for h in results},
-        "total": len(hubs),
+        "hubs": hubs,
+        "locations": locations,
+        "total": len(master_data.get_hubs_for_cost_code(cost_code)) if cost_code else len(master_data.get_facility_names()),
     })
 
 
 @app.get("/api/location")
-async def location_for_facility(facility: str = ""):
-    return JSONResponse({"facility": facility, "location": rules.get_location_for_facility(facility)})
+async def location_for_facility(facility: str = "", location: str = "", facility_ref: str = ""):
+    resolved = master_data.resolve_facility_selection(facility, location, facility_ref)
+    return JSONResponse({
+        "facility": facility,
+        "facility_name": resolved["facility_name"],
+        "location": resolved["location"],
+        "facility_ref": resolved["facility_ref"],
+    })
 
 
 # ── API: Dashboard Counts ────────────────────────────────────────────────────
@@ -1925,10 +2003,10 @@ async def generate_preview(batch_id: int):
     """Return a preview summary for the Generate Onboarding Files dialog.
 
     Only Ready candidates are eligible; Draft / Needs Attention / invalid
-    candidates are shown as excluded. Both output files are previewed.
+    candidates are shown as excluded. A single two-sheet workbook (OB Format
+    + Mail Format) is generated from the Excel Generation template.
     """
-    template_ok = generation.template_is_configured()
-    backend_tpl_ok = generation.template_backend_is_configured()
+    template_ok = generation.excel_template_is_configured()
     recruiter_name = generation.get_default_recruiter_name()
     candidates = database.get_batch_candidates(batch_id)
     ready = [c for c in candidates if (c.get("status") or "").lower() == "ready"]
@@ -1938,16 +2016,22 @@ async def generate_preview(batch_id: int):
     valid_ids = {r["candidate_id"] for r in vres["rows"]}
     invalid_ready = [c for c in ready if c["candidate_id"] not in valid_ids]
 
-    # Backend readiness of the valid candidates (blocks the pair when missing).
+    # Mail-sheet readiness of the valid candidates (blocks generation when missing).
     candidates_by_id = {c["candidate_id"]: c for c in ready}
-    backend = generation.build_backend_rows(vres["rows"], candidates_by_id)
-    backend_blocking = {cid: msgs for cid, msgs in backend["problems"].items() if msgs}
+    mail = generation.build_mail_rows(vres["rows"], candidates_by_id)
+    mail_blocking = {cid: msgs for cid, msgs in mail["problems"].items() if msgs}
 
     now = datetime.now()
     ts = generation.build_pair_timestamp(now)
+    _parts = []
+    if not template_ok:
+        _parts.append("The Excel Generation template is not configured.")
+    if not vres["rows"]:
+        _parts.append("No Ready candidates passed validation.")
+    if mail_blocking:
+        _parts.append("Mail-sheet data is incomplete for some candidates.")
     return JSONResponse({
         "template_configured": template_ok,
-        "backend_template_configured": backend_tpl_ok,
         "recruiter_name": recruiter_name,
         "batch_id": batch_id,
         "ready_count": len(ready),
@@ -1957,14 +2041,11 @@ async def generate_preview(batch_id: int):
             c["candidate_id"]: generation.validate_candidates([c])["errors"].get(c["candidate_id"], [])
             for c in others
         } | {c: vres["errors"][c] for c in vres["errors"]},
-        "backend_blocking": backend_blocking,
-        "backend_problem_count": len(backend_blocking),
+        "mail_blocking": mail_blocking,
+        "backend_problem_count": len(mail_blocking),
         "output_folder": str(generation.get_output_base_dir()),
-        "filename_preview": generation.self_onboarding_filename(ts),
-        "backend_filename_preview": generation.backend_filename(ts),
-        "message": ("" if template_ok and backend_tpl_ok
-                    else "One or both templates are not configured.") +
-                   ("" if vres["rows"] else " No Ready candidates passed validation."),
+        "filename_preview": generation.onboarding_filename(ts),
+        "message": " ".join(_parts),
     })
 
 

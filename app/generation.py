@@ -59,6 +59,50 @@ TEMPLATE_FILE = master_data.MASTERS_DIR / master_data.MASTER_FILES["self_onboard
 BACKEND_TEMPLATE_NAME = "TeamHR_OB_Template.xlsx"
 TEMPLATE_BACKEND_FILE = master_data.MASTERS_DIR / BACKEND_TEMPLATE_NAME
 
+# Authoritative single-workbook template (the ONLY template the UI uses now).
+TEMPLATES_DATA_DIR = BASE_DIR / "data" / "templates"
+EXCEL_TEMPLATE_NAME = "Excel Generation.xlsx"
+EXCEL_GENERATION_FILE = TEMPLATES_DATA_DIR / EXCEL_TEMPLATE_NAME
+
+# The two sheets inside the Excel Generation workbook.
+OB_FORMAT_SHEET = "OB Format"
+MAIL_FORMAT_SHEET = "Mail Format"
+
+# Authoritative OB Format columns (13, in this exact order — from the template).
+OB_FORMAT_COLUMNS = [
+    "Sl No",
+    "Name*",
+    "Mobile Number*",
+    "Team*",
+    "Cost Code*",
+    "Facility Type*",
+    "Line of Business*",
+    "Sub Type*",
+    "Role - Designation*",
+    "Fixed Net Take Home*",
+    "State*",
+    "Facility*",
+    "Contractor*",
+]
+
+# Authoritative Mail Format columns (14, in this exact order — from the template).
+MAIL_FORMAT_COLUMNS = [
+    "Date of Joining",
+    "Name",
+    "Mobile No",
+    "Designation",
+    "Branch",
+    "Vertical",
+    "State",
+    "Net Salary",
+    "Aadhar No",
+    "DOB",
+    "Fathers Name",
+    "Address",
+    "Pin Code",
+    "Gender",
+]
+
 # Current fixed business values (validated by the app / production workbook).
 DEFAULT_MIGRANT = "No"
 DEFAULT_CONTRACTOR = "TEAM HR GSA PRIVATE LIMITED"
@@ -153,6 +197,8 @@ def get_output_config() -> dict:
         "template_file": str(TEMPLATE_FILE),
         "backend_template_configured": template_backend_is_configured(),
         "backend_template_file": str(TEMPLATE_BACKEND_FILE),
+        "excel_template_configured": excel_template_is_configured(),
+        "excel_template_file": str(EXCEL_GENERATION_FILE),
         "recruiter_name": get_default_recruiter_name(),
         "captured": last,
     }
@@ -165,6 +211,10 @@ def template_is_configured() -> bool:
     return TEMPLATE_FILE.exists()
 
 
+def excel_template_is_configured() -> bool:
+    return EXCEL_GENERATION_FILE.exists()
+
+
 def template_backend_is_configured() -> bool:
     return TEMPLATE_BACKEND_FILE.exists()
 
@@ -172,7 +222,7 @@ def template_backend_is_configured() -> bool:
 def _template_version(path: Optional[Path] = None) -> str:
     """Best-effort template version (file mtime) for the audit log."""
     try:
-        ts = (path or TEMPLATE_FILE).stat().st_mtime
+        ts = (path or EXCEL_GENERATION_FILE).stat().st_mtime
         return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:  # noqa: BLE001
         return ""
@@ -185,9 +235,11 @@ def derive_state(candidate: dict) -> str:
     """Return the State for a candidate.
 
     Prefer an explicit candidate ``state`` if present; otherwise derive from
-    the Location Code's city via the configured city->state rule. If no State
-    can be determined the empty string is returned (caller flags Needs
-    Attention and excludes the candidate — we never silently guess).
+    the Location Code's city via the configured city->state rule. The HubName
+    Facility / Location Master is the Karnataka operations list, so a facility
+    that resolves to a master row defaults to Karnataka. If no State can be
+    determined the empty string is returned (caller flags Needs Attention and
+    excludes the candidate — we never silently guess).
     """
     s = (candidate.get("state") or "").strip()
     if s:
@@ -197,6 +249,14 @@ def derive_state(candidate: dict) -> str:
         city = loc.split("/", 1)[0].strip().upper()
         if city in CITY_STATE:
             return CITY_STATE[city]
+    facility = (candidate.get("facility_name") or "").strip()
+    if facility:
+        try:
+            row = master_data.get_effective_facility(facility)
+        except Exception:  # noqa: BLE001
+            row = None
+        if row is not None:
+            return "Karnataka"
     return ""
 
 
@@ -256,6 +316,11 @@ def self_onboarding_filename(ts: str) -> str:
 
 def backend_filename(ts: str) -> str:
     return f"TeamHR_OB_{ts}.xlsx"
+
+
+def onboarding_filename(ts: str) -> str:
+    """Single-workbook filename: ONE timestamped file with both sheets."""
+    return f"Onboarding_{ts}.xlsx"
 
 
 def _unique_path(path: Path) -> Path:
@@ -437,22 +502,28 @@ def validate_candidates(candidates: list[dict]) -> dict:
     return {"rows": rows, "errors": errors, "blocked": blocked}
 
 
-def _find_header_row(ws) -> Optional[int]:
+def _find_header_row(ws, require_cost_code: bool = True) -> Optional[int]:
     """Locate the header row (row index 1-based) in the first few rows.
 
     Header cells may carry a ``*`` required marker (e.g. ``Name*``); markers
     are stripped for comparison. Requires 'name' + one of the mobile-column
-    spellings + 'cost code' to avoid matching a Lists/reference sheet.
+    spellings + 'cost code' (the OB Format sheet) to avoid matching a
+    Lists/reference sheet. The Mail Format sheet has no cost-code column, so
+    ``require_cost_code`` may be disabled for it.
     """
     for row_idx in range(1, min(ws.max_row, 5) + 1):
         cells = []
         for c in range(1, ws.max_column + 1):
             raw = str(ws.cell(row=row_idx, column=c).value or "").strip().lower()
             cells.append(raw.rstrip("*"))
-        if "name" in cells and (
-            "mobile" in cells or "mobile number" in cells or "mobile no" in cells
-        ) and "cost code" in cells:
-            return row_idx
+        if "name" not in cells:
+            continue
+        if not ("mobile" in cells or "mobile number" in cells
+                or "mobile no" in cells):
+            continue
+        if require_cost_code and "cost code" not in cells:
+            continue
+        return row_idx
     return None
 
 
@@ -711,12 +782,14 @@ def _as_date(value: object):
 
 
 def _save_workbook_checked(wb, path: Path, expect_rows: int, headers: list[str],
-                           col_count: int) -> str:
+                           col_count: int, another_sheet: Optional[list[str]] = None) -> str:
     """Save ``wb`` to ``path`` (tmp+rename) then re-open and verify it.
 
     Verification asserts the sheet exists, headers match exactly, and the
-    expected number of data rows is present. The file is written atomically
-    (tmp then rename) so a failed build never leaves a corrupt workbook.
+    expected number of data rows is present. When ``another_sheet`` is given it
+    is verified on the matching second worksheet too. The file is written
+    atomically (tmp then rename) so a failed build never leaves a corrupt
+    workbook.
     """
     tmp_path = path.with_name(path.name + ".tmp")
     try:
@@ -745,38 +818,213 @@ def _save_workbook_checked(wb, path: Path, expect_rows: int, headers: list[str],
             raise ValueError(
                 f"Expected {expect_rows} data rows but workbook has {data_rows}."
             )
+        if another_sheet is not None:
+            extra_ws = None
+            for sws in wb2.worksheets:
+                if sws is not ws:
+                    extra_ws = sws
+                    break
+            if extra_ws is None:
+                raise ValueError("Workbook is missing the second sheet.")
+            extra_headers = [_clean_header(extra_ws.cell(row=1, column=c).value)
+                             for c in range(1, len(another_sheet) + 1)]
+            extra_expected = [_clean_header(h) for h in another_sheet]
+            if extra_headers != extra_expected:
+                raise ValueError(
+                    f"Second sheet headers do not match the official template: "
+                    f"{extra_headers}"
+                )
     finally:
         wb2.close()
     return str(path)
 
 
-def generate_onboarding_pair(batch_id: int, only_ready: bool = True) -> dict:
-    """Generate BOTH workbooks (Self-Onboarding + TeamHR Backend Mail).
+def _find_sheet_by_title(wb, sheet_name: str):
+    """Return the worksheet whose TITLE equals ``sheet_name`` (case-insensitive)."""
+    lower = sheet_name.lower()
+    for ws in wb.worksheets:
+        if (ws.title or "").strip().lower() == lower:
+            return ws
+    return None
 
-    Transactional: either both files land (and are DB-recorded together under
-    one generation_pair_id with a shared timestamp) or the whole generation
-    fails and nothing is left behind.
 
-    Returns a result dict mirroring the previous ``generate_batch_excel`` shape
-    but with both file entries, the pair id, and per-file validation detail.
+def build_mail_rows(rows: list[dict], candidates_by_id: dict) -> dict:
+    """Build the Mail Format rows for the approved candidates.
+
+    Returns {rows, problems}. ``rows`` are serializable mail-row dicts;
+    ``problems`` maps candidate_id -> list of blocking messages. Values come
+    from the candidate DB record (full Aadhaar, DOB, address, DOJ, gender,
+    PIN, father name) and the validated row (name, mobile, designation, branch,
+    vertical, state, salary) — never inferred here.
+    """
+    out_rows = []
+    problems: dict[int, list[str]] = {}
+    for r in rows:
+        cid = r["candidate_id"]
+        cand = candidates_by_id.get(cid)
+        if cand is None:
+            problems[cid] = ["Candidate record missing."]
+            continue
+        merged = {**cand, **r}
+        problems[cid] = rules.validate_backend_candidate(merged)
+        if problems[cid]:
+            continue
+        salary, _ = rules.normalize_salary(str(r.get("salary") or cand.get("salary") or ""))
+        out_rows.append({
+            "candidate_id": cid,
+            "date_of_joining": rules.normalize_doj(cand.get("doj"))[0],
+            "name": r["name"],
+            "mobile": r["mobile"],
+            "designation": r["designation"],
+            "branch": r["location_code"],
+            "vertical": r["facility_name"],
+            "state": (r.get("state") or derive_state(cand)).title(),
+            "salary": salary if salary is not None else "",
+            "aadhaar_number": (cand.get("aadhaar_number") or "").strip(),
+            "dob": rules.parse_date(cand.get("dob")),
+            "father_name": rules.normalize_father_name(cand.get("father_name"))[0],
+            "address": (cand.get("address") or "").strip(),
+            "pin_code": rules.normalize_pin_code(cand.get("pin_code"))[0],
+            "gender": rules.normalize_gender(cand.get("gender"))[0],
+        })
+    return {"rows": out_rows, "problems": problems}
+
+
+def build_onboarding_workbook(rows: list[dict], mail_rows: list[dict]) -> tuple:
+    """Open a copy of the authoritative ``Excel Generation.xlsx`` template and
+    write candidate rows into BOTH its sheets (OB Format + Mail Format).
+
+    Formatting is preserved from the template (headers, widths, styles). New
+    mobile / facility / Aadhaar cells are forced to TEXT (no scientific
+    notation); DOB / Date of Joining are real Excel dates with DD/MM/YYYY
+    format; Net Salary is a number with a thousand separator.
+
+    Returns (wb, header_rows, written_count) or raises on failure.
+    """
+    from openpyxl import load_workbook
+
+    if not EXCEL_GENERATION_FILE.exists():
+        raise ValueError("Excel Generation template is not configured.")
+
+    wb = load_workbook(str(EXCEL_GENERATION_FILE))
+    ob_ws = _find_sheet_by_title(wb, OB_FORMAT_SHEET)
+    mail_ws = _find_sheet_by_title(wb, MAIL_FORMAT_SHEET)
+    if ob_ws is None or mail_ws is None:
+        wb.close()
+        raise ValueError(
+            f"Excel Generation template must contain '{OB_FORMAT_SHEET}' and "
+            f"'{MAIL_FORMAT_SHEET}' sheets."
+        )
+
+    ob_header = _find_header_row(ob_ws)
+    if ob_header is None:
+        wb.close()
+        raise ValueError("OB Format sheet: header row not found.")
+    mail_header = _find_header_row(mail_ws, require_cost_code=False)
+    if mail_header is None:
+        wb.close()
+        raise ValueError("Mail Format sheet: header row not found.")
+
+    mobile_col = None
+    facility_col = None
+    for c in range(1, ob_ws.max_column + 1):
+        header = _clean_header(ob_ws.cell(row=ob_header, column=c).value)
+        if header == "mobile number":
+            mobile_col = c
+        if header == "facility":
+            facility_col = c
+
+    def _next_free(ws, header_row):
+        row = header_row + 1
+        while ws.cell(row=row, column=1).value not in (None, ""):
+            row += 1
+        return row
+
+    def _clear_sample_rows(ws, header_row):
+        """Remove the template's demo/sample data rows below the header so the
+        generated deliverable contains ONLY the real candidate rows while all
+        header formatting (filters, widths, styles) is preserved."""
+        if ws.max_row > header_row:
+            ws.delete_rows(header_row + 1, ws.max_row - header_row)
+
+    # OB Format: Facility* = the LOCATION code (Column B) from the master row,
+    # exactly like the template's own sample rows (HBB/BLR, BLR/PEN, ...).
+    _clear_sample_rows(ob_ws, ob_header)
+    _clear_sample_rows(mail_ws, mail_header)
+    next_row = _next_free(ob_ws, ob_header)
+    for idx, rdata in enumerate(rows, start=1):
+        row_data = dict(rdata)
+        row_data["sl_no"] = idx
+        row_data["facility_name"] = rdata.get("location_code") or rdata.get("facility_name") or ""
+        mapped = _map_row_to_columns(ob_ws, ob_header, row_data)
+        for col, val in mapped.items():
+            cell = ob_ws.cell(row=next_row, column=col)
+            cell.value = "" if val is None else val
+            if col == mobile_col:
+                cell.number_format = "@"
+            elif col == facility_col:
+                cell.number_format = "@"
+        next_row += 1
+
+    # Mail Format: Branch = LOCATION code (Column B); Vertical = facility name.
+    for idx, m in enumerate(mail_rows):
+        row_num = _next_free(mail_ws, mail_header)
+        values = [
+            _as_date(m.get("date_of_joining")),
+            m["name"],
+            m["mobile"],
+            m["designation"],
+            m["branch"],
+            m["vertical"],
+            m["state"],
+            m["salary"],
+            m["aadhaar_number"],
+            _as_date(m.get("dob")),
+            m["father_name"],
+            m["address"],
+            m["pin_code"],
+            m["gender"],
+        ]
+        for col, val in enumerate(values, start=1):
+            cell = mail_ws.cell(row=row_num, column=col)
+            if col in (3, 9):            # Mobile No, Aadhar No -> TEXT
+                cell.number_format = "@"
+                cell.value = str(val) if val not in (None, "") else ""
+            elif col in (1, 10):         # Date of Joining, DOB -> real dates
+                cell.number_format = "DD/MM/YYYY"
+                cell.value = val or None
+            elif col == 8:               # Net Salary -> number
+                cell.number_format = "#,##0"
+                cell.value = val if val not in (None, "") else None
+            else:
+                cell.value = "" if val is None else val
+
+    return wb, {"ob_header": ob_header, "mail_header": mail_header}, len(rows)
+
+
+def generate_onboarding_workbook(batch_id: int, only_ready: bool = True) -> dict:
+    """Generate the SINGLE onboarding workbook (OB Format + Mail Format sheets).
+
+    Transactional: if the workbook cannot be built or verified, NO file is left
+    behind. Only ``ready`` candidates are included. The file is timestamped and
+    re-generation NEVER overwrites an existing workbook (a new timestamp/file).
+
+    Returns a result dict with ``success``, ``generated_file_id`` (the single
+    file), ``generation_pair_id`` (single id), ``filename``, ``file_path``.
     """
     now = datetime.now()
-    if not template_is_configured():
-        return {"success": False, "error": "Self Onboarding Template is not configured."}
-    if not template_backend_is_configured():
-        return {"success": False, "error": "TeamHR Backend Mail Template is not configured."}
+    if not excel_template_is_configured():
+        return {"success": False, "error": "Excel Generation Template is not configured."}
 
     candidates = database.get_batch_candidates(batch_id)
     ready = [c for c in candidates if (c.get("status") or "").lower() == "ready"]
     others = [c for c in candidates if (c.get("status") or "").lower() != "ready"]
     excluded = {}
-
     for c in others:
         excluded[c["candidate_id"]] = [
             f"Candidate status is '{c.get('status')}' (only Ready candidates are generated)."
         ]
 
-    # Validate ready candidates for the Self-Onboarding workbook.
     vres = validate_candidates(ready)
     rows = vres["rows"]
     for cid, errs in vres["errors"].items():
@@ -791,40 +1039,27 @@ def generate_onboarding_pair(batch_id: int, only_ready: bool = True) -> dict:
             "candidate_count": 0,
         }
 
-    # Build backend rows from the same candidate set; any problem blocks the
-    # WHOLE pair (never generate workbooks that conflict with reality).
+    # Mail Format validation is blocking: never generate a workbook whose Mail
+    # sheet is missing required PII (full Aadhaar, DOB, gender, PIN, ...).
     candidates_by_id = {c["candidate_id"]: c for c in ready}
-    backend = build_backend_rows(rows, candidates_by_id)
-    blocking = {cid: msgs for cid, msgs in backend["problems"].items() if msgs}
+    mail = build_mail_rows(rows, candidates_by_id)
+    blocking = {cid: msgs for cid, msgs in mail["problems"].items() if msgs}
     if blocking:
         return {
             "success": False,
-            "error": "Backend workbook requirements are not met for some candidates.",
+            "error": "Mail Format requirements are not met for some candidates.",
             "excluded": {cid: msgs for cid, msgs in blocking.items()},
             "candidate_count": 0,
-            "backend_problems": blocking,
+            "mail_problems": blocking,
         }
 
-    # Build both workbooks (throws -> transactional abort).
     try:
-        so_wb, so_ws, so_header, n_so = build_self_onboarding_workbook(rows)
+        wb, _hdr, n_rows = build_onboarding_workbook(rows, mail["rows"])
     except Exception as e:  # noqa: BLE001
         return {"success": False,
-                "error": f"Could not build Self-Onboarding workbook: {e}",
-                "excluded": excluded, "candidate_count": 0}
-    try:
-        ob_wb, ob_ws, ob_header, n_ob = build_backend_workbook(backend["rows"])
-    except Exception as e:  # noqa: BLE001
-        try:
-            so_wb.close()
-        except Exception:  # noqa: BLE001
-            pass
-        return {"success": False,
-                "error": f"Could not build TeamHR Backend workbook: {e}",
+                "error": f"Could not build onboarding workbook: {e}",
                 "excluded": excluded, "candidate_count": 0}
 
-    # Shared timestamp -> recognizable pair, both folders under today's date.
-    # Bump a second if the exact second was already used so pair ids stay unique.
     ts = build_pair_timestamp(now)
     while database.get_generation_pair(f"PO-{ts}"):
         now = now + timedelta(seconds=1)
@@ -832,6 +1067,10 @@ def generate_onboarding_pair(batch_id: int, only_ready: bool = True) -> dict:
     try:
         folders = build_date_folders(now)
     except Exception as e:  # noqa: BLE001
+        try:
+            wb.close()
+        except Exception:  # noqa: BLE001
+            pass
         return {
             "success": False,
             "error": f"Could not create output folders: {e}",
@@ -839,94 +1078,72 @@ def generate_onboarding_pair(batch_id: int, only_ready: bool = True) -> dict:
             "candidate_count": 0,
         }
     pair_id = f"PO-{ts}"
-    so_name = self_onboarding_filename(ts)
-    ob_name = backend_filename(ts)
-    so_path = _unique_path(Path(folders["uploads"]) / so_name)
-    ob_path = _unique_path(Path(folders["backend_mail"]) / ob_name)
+    name = onboarding_filename(ts)
+    path = _unique_path(Path(folders["base"]) / name)
 
-    # Transactional save + verify: either both succeed or both are cleaned up.
     try:
-        so_saved = _save_workbook_checked(so_wb, so_path, len(rows),
-                                          _TEMPLATE_COLUMNS, len(_TEMPLATE_COLUMNS))
+        saved = _save_workbook_checked(wb, path, len(rows),
+                                       OB_FORMAT_COLUMNS, len(OB_FORMAT_COLUMNS),
+                                       another_sheet=MAIL_FORMAT_COLUMNS)
     except Exception as e:  # noqa: BLE001
-        _try_unlink(so_path)
-        _try_unlink(ob_path)
+        _try_unlink(path)
         return {"success": False,
-                "error": f"Could not save/verify Self-Onboarding workbook: {e}",
-                "excluded": excluded, "candidate_count": 0}
-    try:
-        ob_saved = _save_workbook_checked(ob_wb, ob_path, len(backend["rows"]),
-                                          BACKEND_COLUMNS, len(BACKEND_COLUMNS))
-    except Exception as e:  # noqa: BLE001
-        _try_unlink(so_path)
-        _try_unlink(ob_path)
-        return {"success": False,
-                "error": f"Could not save/verify TeamHR Backend workbook: {e}",
+                "error": f"Could not save/verify onboarding workbook: {e}",
                 "excluded": excluded, "candidate_count": 0}
 
-    # DB links (both rows share generation_pair_id and generated_at).
     generated_at = now.strftime("%Y-%m-%d %H:%M:%S")
-    so_id = database.create_generated_file(
+    gid = database.create_generated_file(
         batch_id=batch_id,
-        filename=so_path.name,
-        file_path=str(so_path),
+        filename=path.name,
+        file_path=str(path),
         date_folder=folders["date_folder"],
         candidate_count=len(rows),
         generation_status="generated",
-        portal_result_path=str(Path(folders["results"]) / result_file_for(so_path.name, "RESULT")),
-        portal_failure_path=str(Path(folders["errors"]) / result_file_for(so_path.name, "FAILED")),
-        kind="self_onboarding",
+        portal_result_path=str(Path(folders["results"]) / result_file_for(path.name, "RESULT")),
+        portal_failure_path=str(Path(folders["errors"]) / result_file_for(path.name, "FAILED")),
+        kind="excel_generation",
         generation_pair_id=pair_id,
     )
-    ob_id = database.create_generated_file(
-        batch_id=batch_id,
-        filename=ob_path.name,
-        file_path=str(ob_path),
-        date_folder=folders["date_folder"],
-        candidate_count=len(backend["rows"]),
-        generation_status="generated",
-        portal_result_path="",
-        portal_failure_path="",
-        kind="backend_mail",
-        generation_pair_id=pair_id,
-    )
-    # Align the two rows' recorded timestamp (both use the same generated_at).
-    database.update_generated_file_generated_at(so_id, generated_at)
-    database.update_generated_file_generated_at(ob_id, generated_at)
-    database.update_candidates_generated([r["candidate_id"] for r in rows], so_id)
+    database.update_generated_file_generated_at(gid, generated_at)
+    database.update_candidates_generated([r["candidate_id"] for r in rows], gid)
     database.update_batch_status(batch_id, "Generated")
     database.record_generation_audit(
         batch_id=batch_id,
-        generated_file_id=so_id,
+        generated_file_id=gid,
         candidate_ids=[r["candidate_id"] for r in rows],
-        template_name=TEMPLATE_FILE.name,
+        template_name=EXCEL_TEMPLATE_NAME,
         template_version=_template_version(),
         status="ok",
     )
 
-    # Daily master export (internal; masked Aadhaar only).
     try:
-        daily_file = export_daily_master(rows, now, so_path.name)
+        daily_file = export_daily_master(rows, now, path.name)
     except Exception:  # noqa: BLE001
         daily_file = None
 
     return {
         "success": True,
-        "generated_file_id": so_id,
-        "backend_file_id": ob_id,
+        "generated_file_id": gid,
         "generation_pair_id": pair_id,
         "batch_id": batch_id,
         "candidate_count": len(rows),
-        "filename": so_path.name,
-        "file_path": str(so_path),
-        "backend_filename": ob_path.name,
-        "backend_file_path": str(ob_path),
+        "filename": path.name,
+        "file_path": str(path),
         "date_folder": folders["date_folder"],
         "folders": folders,
         "generated_at": generated_at,
         "excluded": excluded,
         "daily_master_file": str(daily_file) if daily_file else None,
     }
+
+
+def generate_onboarding_pair(batch_id: int, only_ready: bool = True) -> dict:
+    """Generate the onboarding workbook (single file, OB + Mail sheets).
+
+    The two-file pair design was replaced by the single two-sheet workbook from
+    ``Excel Generation.xlsx``; generators and callers see ONE result dict.
+    """
+    return generate_onboarding_workbook(batch_id, only_ready=only_ready)
 
 
 def _try_unlink(path: Path) -> None:
@@ -938,8 +1155,8 @@ def _try_unlink(path: Path) -> None:
 
 
 def generate_batch_excel(batch_id: int, only_ready: bool = True) -> dict:
-    """Backward-compatible wrapper: generate the full onboarding pair."""
-    return generate_onboarding_pair(batch_id, only_ready=only_ready)
+    """Backward-compatible wrapper: generate the onboarding workbook."""
+    return generate_onboarding_workbook(batch_id, only_ready=only_ready)
 
 
 # ── Daily master export ─────────────────────────────────────────────────────

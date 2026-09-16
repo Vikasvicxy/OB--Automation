@@ -61,6 +61,9 @@ REJECTED_NAME_FRAGMENTS: list[str] = [
     "republicofindia",
     "pincode",
     "signature",
+    "sign",
+    "signatu",
+    "signatur",
 ]
 
 _RE_GENDER_LINE = re.compile(r"^\s*(male|female)\s*$", re.IGNORECASE)

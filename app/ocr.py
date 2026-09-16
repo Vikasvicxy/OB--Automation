@@ -195,6 +195,9 @@ _REJECTED_NAME_FRAGMENTS: list[str] = [
     "republicofindia",
     "pincode",
     "signature",
+    "sign",
+    "signatu",
+    "signatur",
 ]
 
 

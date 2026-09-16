@@ -55,7 +55,8 @@ CANDIDATE_COLUMNS = [
     "team",
     "designation",
     "facility_type",
-    "facility_name",
+"facility_name",
+    "facility_ref",
     "location_code",
     "salary",
     "salary_display",
@@ -128,6 +129,7 @@ def init_db() -> None:
                 designation     TEXT,
                 facility_type   TEXT,
                 facility_name   TEXT,
+                facility_ref    TEXT,
                 location_code   TEXT,
                 salary          INTEGER,
                 salary_display  TEXT,
@@ -525,6 +527,7 @@ def init_db() -> None:
             ("pin_code", "TEXT"),
             ("gender", "TEXT"),
             ("uan_no", "TEXT"),
+            ("facility_ref", "TEXT"),
         ):
             if col not in cols:
                 conn.execute(f"ALTER TABLE candidates ADD COLUMN {col} {ddl}")

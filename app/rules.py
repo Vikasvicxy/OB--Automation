@@ -203,18 +203,28 @@ FACILITY_TYPE_ALIASES = {
 HUB_MASTER: list[str] = []
 
 
-def classify_hub(hub_name: str) -> str:
-    """Classify a facility as LM, FM, or Myntra based on name.
+def classify_hub(hub_name: str, facility_ref: str = "", location: str = "") -> str:
+    """Classify a facility as LM, FM, or Myntra based on its master row.
 
     Priority order:
-        1. name contains "MYNTRA"        -> "Myntra"
-        2. name ends with "_PL"          -> "FM"  (Flipkart First Mile)
-        3. otherwise                      -> "LM"  (Flipkart Last Mile)
+        1. exact master row (effective view) -> use the row's entity/operation
+           (rows are classified from display + system reference text).
+        2. text contains "MYNTRA"           -> "Myntra"
+        3. text contains "_PL" / "PICKUP"   -> "FM"  (Flipkart First Mile)
+        4. otherwise                         -> "LM"  (Flipkart Last Mile)
     """
-    upper = hub_name.upper()
-    if "MYNTRA" in upper:
+    row = master_data.get_effective_facility(hub_name or "")
+    if row:
+        if row.get("entity") == "Myntra":
+            return "Myntra"
+        if row.get("operation") == "First Mile":
+            return "FM"
+        return "LM"
+    is_myntra, is_fm, _cc, _e, _op = master_data._classify_facility_text(
+        facility_ref, hub_name, location)
+    if is_myntra:
         return "Myntra"
-    if hub_name.endswith("_PL"):
+    if is_fm:
         return "FM"
     return "LM"
 
@@ -252,9 +262,15 @@ def get_hubs_for_cost_code(cost_code: str) -> list[str]:
     return master_data.get_hubs_for_cost_code(cost_code)
 
 
-def get_location_for_facility(facility_name: str) -> str:
-    """Exact official LOCATION code for a facility (from the master row)."""
-    return master_data.get_location_for_facility(facility_name)
+def get_location_for_facility(facility_name: str, location: str = "", facility_ref: str = "") -> str:
+    """Exact official LOCATION code for a facility (from the master row).
+
+    ``location`` (Column B) is returned as-is when it matches a master row;
+    ``facility_ref`` (Column A) resolves to its row's location; the display
+    name (Column C) resolves only when unambiguous. This makes the caller
+    unable to store a stale location: the master row always wins.
+    """
+    return master_data.get_location_for_facility(facility_name, location, facility_ref)
 
 
 def fuzzy_find_hub(query: str, hubs: list[str], top_n: int = 5) -> list[str]:
@@ -654,17 +670,42 @@ def match_hub_from_text(
     query = (text or "").strip()
     if not query or len(query) < 4:
         return None, None
-    candidates = get_hubs_for_cost_code(cost_code) if cost_code else HUB_MASTER
-    if not candidates:
+
+    rows = list(master_data.get_facility_rows())
+    if cost_code:
+        rows = [r for r in rows if (r.get("cost_code") or "") == cost_code]
+    # Each official facility can be referenced by its display name, its system
+    # reference (facility_ref, which carries the locality in parentheses, e.g.
+    # "BLR/NLM (NelamangalaHub_BLR)") or its location code. All aliases map back
+    # to the canonical display name so a real screenshot locality keeps
+    # resolving even when the master display is a location code.
+    aliases: list[tuple[str, str]] = []
+    seen_display = set()
+    for r in rows:
+        display = (r.get("facility_name") or "").strip()
+        if not display:
+            continue
+        alias_map = {}
+        for key in ("facility_ref", "location", "facility_name"):
+            val = (r.get(key) or "").strip()
+            if val:
+                alias_map[val.lower()] = display
+        for a, d in alias_map.items():
+            aliases.append((a, d))
+        if display not in seen_display:
+            seen_display.add(display)
+            aliases.append((display.lower(), display))
+    if not aliases:
         return None, None
     q_low = query.lower()
 
-    # Exact match always wins. Without this, a query like "PeenyaHub_BLR" could
-    # be overtaken by the substring-extended "PeenyaHub_BLR_PL", incorrectly
-    # flipping an exact LM hub into an FM (_PL) facility.
-    for hub in candidates:
-        if hub.lower() == q_low:
-            return hub, "Screenshot + master match"
+    # Exact match always wins (against any alias — display, ref or location).
+    # Without this, a query like "PeenyaHub_BLR" could be overtaken by the
+    # substring-extended "PeenyaHub_BLR_PL", incorrectly flipping an exact LM
+    # hub into an FM (_PL) facility.
+    for a, d in aliases:
+        if a == q_low:
+            return d, "Screenshot + master match"
 
     q_tokens = [t for t in re.split(r"[\s_\-]+", q_low) if t]
     # Discriminative locality tokens — excludes generic/structural tokens such
@@ -680,10 +721,8 @@ def match_hub_from_text(
     best_score = 0.0
     best_token = 0.0
 
-    for hub in candidates:
-        h_low = hub.lower()
-        # Whole-phrase similarity on discriminative locality cores.
-        h_core = _facility_core(h_low)
+    for alias, display in aliases:
+        h_core = _facility_core(alias)
         base = difflib.SequenceMatcher(None, q_core, h_core).ratio()
         # Meaningful single-locality-token overlap (typo tolerant).
         h_tokens = [t for t in re.split(r"[\s_\-]+", h_core) if t]
@@ -696,13 +735,13 @@ def match_hub_from_text(
                     continue
                 if qt == ht:
                     token = max(token, 1.0)
-                elif qt in ht or ht in qt:
+                elif len(qt) >= 4 and len(ht) >= 4 and (qt in ht or ht in qt):
                     token = max(token, 0.9)
                 else:
                     token = max(token, difflib.SequenceMatcher(None, qt, ht).ratio())
         score = max(base, token * 0.9)
         if score > best_score:
-            best_score, best_hub, best_token = score, hub, token
+            best_score, best_hub, best_token = score, display, token
 
     if not best_hub:
         return None, None
@@ -719,21 +758,51 @@ def match_hub_from_text(
 # facility match. They are removed before scoring so only real locality overlap
 # (Peenya / Banaswadi / Hebbal / Nelamangala ...) can drive a fuzzy hit.
 _GENERIC_FACILITY_TOKENS = {
-    "myntra", "mynt", "hub", "hubs", "lm", "fm", "first", "last", "mile", "pl",
+    "myntra", "mynt", "hub", "hubs", "lm", "fm", "first", "last", "mile",
+    "pl", "blr", "mpl",
 }
 
-_GENERIC_FACILITY_STRIP = re.compile(
-    r"(myntra|mynt|hub|_pl|_blr|pl|\blm\b|\bfm\b|\bfirst\b|\blast\b|\bmile\b)",
-    re.IGNORECASE,
-)
+_TOKEN_CLEAN = re.compile(r"[^a-z0-9]")
+
+# Structural markers that also appear run together with a locality (e.g.
+# "BanaswadiMYNTRAHub_BLR", "unknownmyntrahub"). Stripped as prefix/suffix of
+# each raw token so only the locality word remains for scoring. Guarded by a
+# minimum remaining length so "mpl" can never be reduced to the fragment "m".
+_FACILITY_AFFIXES = ("myntra", "mynt", "hub", "hubs", "blr", "pl", "mpl", "lm", "fm")
+
+
+def _clean_token_core(token: str) -> str:
+    t = _TOKEN_CLEAN.sub("", (token or "").lower())
+    if not t:
+        return ""
+    changed = True
+    while changed:
+        changed = False
+        for m in _FACILITY_AFFIXES:
+            if t.startswith(m) and len(t) - len(m) >= 3:
+                t = t[len(m):]
+                changed = True
+                break
+        if changed:
+            continue
+        for m in _FACILITY_AFFIXES:
+            if len(m) <= len(t) and t.endswith(m) and len(t) - len(m) >= 3:
+                t = t[:-len(m)] if m else t
+                changed = True
+                break
+    return t
 
 
 def _facility_core(s: str) -> str:
     """Reduce a facility/query string to its discriminative locality tokens by
     removing generic/structural tokens (Myntra, hub, _PL, BLR, LM/FM, first/last
     mile). Used so only real locality overlap can produce a strong fuzzy match."""
-    s = _GENERIC_FACILITY_STRIP.sub(" ", s or "")
-    return re.sub(r"[\s_\-]+", " ", s).strip()
+    tokens = []
+    for tok in re.split(r"[\s_\-]+", s or ""):
+        t = _clean_token_core(tok)
+        if t and t not in _GENERIC_FACILITY_TOKENS:
+            tokens.append(t)
+    return " ".join(tokens)
 
 
 def _hub_query_op_signal(query: str) -> Optional[str]:
@@ -931,14 +1000,16 @@ def resolve_smart_onboarding(
                 else:
                     facility_op = "LM"
 
-        # Ambiguity guard: a BARE hub — no exact official facility, no explicit
-        # LM/FM, no role base — that matches BOTH a Last Mile and a First Mile
-        # hub of the same entity must NOT be auto-committed to one operation
-        # (e.g. "Peenya hub" -> both PeenyaHub_BLR and PeenyaHub_BLR_PL exist).
+        # Ambiguity guard: a hub query with NO explicit LM/FM op and NO exact
+        # official name that matches BOTH a Last Mile and a First Mile hub of
+        # the same entity must NOT be auto-committed to one operation (e.g.
+        # bare "Nelamangala" matches both BLR/NLM last-mile and
+        # NelamangalaHub_BLR_PL first-mile). This applies even when a role base
+        # is present -- a bare locality must not be silently flipped to FM by
+        # whichever facility row scores highest under the new master.
         ambiguous = bool(
             hub_text
             and not myntra
-            and base is None
             and facility_op
             and not hub_exact
             and _hub_query_op_signal(hub_text) is None
@@ -1351,10 +1422,9 @@ def validate_new_candidate_fields(data: dict) -> dict[str, str]:
     return errors
 
 
-# ── Backend workbook validation ──────────────────────────────────────────────
+# ── Mail-format workbook validation ──────────────────────────────────────────
 
 BACKEND_REQUIRED_FIELDS = [
-    ("recruiter_name", "Recruiter Name"),
     ("doj", "Date of Joining"),
     ("name", "Name"),
     ("mobile", "Mobile No"),
@@ -1373,15 +1443,17 @@ BACKEND_OPTIONAL_FIELDS = ["father_name", "uan_no"]
 
 
 def validate_backend_candidate(candidate: dict) -> list[str]:
-    """Return the list of problems blocking this candidate from the Backend workbook.
+    """Return the list of problems blocking this candidate from the Mail format.
 
-    Empty list means the candidate is backend-ready.
+    Empty list means the candidate is mail-ready. Every listed field originates
+    from the candidate's own record or the validated Onboarding row — never
+    inferred here.
     """
     problems: list[str] = []
     for key, label in BACKEND_REQUIRED_FIELDS:
         value = candidate.get(key)
         if value is None or str(value).strip() == "":
-            problems.append(f"{label} is required for the Backend workbook.")
+            problems.append(f"{label} is required for the Mail format.")
     return problems
 
 
@@ -1391,9 +1463,10 @@ def get_rules_for_frontend() -> dict:
     Reads live from master_data so reloads are reflected without a restart.
     """
     cc_roles = _build_cost_code_roles()
-    locations = {
-        f["facility_name"]: f["location"] for f in master_data.get_facilities()
-    }
+    locations: dict[str, str] = {}
+    for f in master_data.get_facility_rows():
+        name = f["facility_name"]
+        locations[name] = "" if name in locations else f.get("location", "")
     return {
         "cost_codes": COST_CODES,
         "roles": ROLES,
