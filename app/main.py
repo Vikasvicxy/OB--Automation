@@ -152,6 +152,17 @@ def _backend_fields(data: dict) -> dict:
     }
 
 
+def _salary_value(data: dict) -> object:
+    """Canonical candidate salary value from any supported payload key.
+
+    The canonical field is ``salary``. Older clients also send
+    ``salary_normalized`` / ``salary_display``; all are normalized to the same
+    integer before persistence/validation. Populated siblings always win over
+    an explicitly empty ``salary``.
+    """
+    return rules.salary_value(data)
+
+
 def _facility_for_candidate(data: dict) -> dict:
     """Resolve a candidate payload to the authoritative facility row.
 
@@ -191,9 +202,9 @@ async def save_draft(request: Request):
             "facility_name": fc["facility_name"],
             "facility_ref": fc["facility_ref"],
             "location_code": fc["location"],
-            "salary": data.get("salary_normalized", data.get("salary")),
+            "salary": rules.normalize_salary(_salary_value(data))[0],
             "salary_display": data.get("salary_display", ""),
-            "aadhaar_number": data.get("aadhaar_number", ""),
+            "aadhaar_number": rules.normalize_aadhaar(data.get("aadhaar_number", "")),
             "dob": data.get("dob", ""),
             "address": data.get("address", ""),
             "status": "draft",
@@ -218,9 +229,9 @@ async def save_draft(request: Request):
         "facility_name": fc["facility_name"],
         "facility_ref": fc["facility_ref"],
         "location_code": fc["location"],
-        "salary": data.get("salary_normalized", data.get("salary")),
+        "salary": rules.normalize_salary(_salary_value(data))[0],
         "salary_display": data.get("salary_display", ""),
-        "aadhaar_number": data.get("aadhaar_number", ""),
+        "aadhaar_number": rules.normalize_aadhaar(data.get("aadhaar_number", "")),
         "dob": data.get("dob", ""),
         "address": data.get("address", ""),
         "status": "draft",
@@ -243,7 +254,7 @@ async def confirm_candidate(request: Request):
         return JSONResponse({"errors": errors}, status_code=422)
 
     mobile_normalized, _ = rules.normalize_mobile(data.get("mobile", ""))
-    salary_normalized, _ = rules.normalize_salary(str(data.get("salary", "")))
+    salary_normalized, _ = rules.normalize_salary(_salary_value(data))
     cost_info = rules.get_cost_code_info(data.get("cost_code", ""))
 
     cost_code = data.get("cost_code", "")
@@ -281,7 +292,7 @@ async def confirm_candidate(request: Request):
             "location_code": location_code,
             "salary": salary_normalized,
             "salary_display": data.get("salary_display", ""),
-            "aadhaar_number": data.get("aadhaar_number", ""),
+            "aadhaar_number": rules.normalize_aadhaar(data.get("aadhaar_number", "")),
             "dob": data.get("dob", ""),
             "address": data.get("address", ""),
             "status": "ready",
@@ -309,7 +320,7 @@ async def confirm_candidate(request: Request):
         "location_code": location_code,
         "salary": salary_normalized,
         "salary_display": data.get("salary_display", ""),
-        "aadhaar_number": data.get("aadhaar_number", ""),
+        "aadhaar_number": rules.normalize_aadhaar(data.get("aadhaar_number", "")),
         "dob": data.get("dob", ""),
         "address": data.get("address", ""),
         "migrant": data.get("migrant", "No"),
@@ -1822,11 +1833,13 @@ async def validation_history():
 
 @app.get("/smart-upload", response_class=HTMLResponse)
 async def smart_upload_page(request: Request):
+    rules_json = json.dumps(rules.get_rules_for_frontend())
     return templates.TemplateResponse(
         "smart_upload.html",
         {
             "request": request,
             "rules": rules.get_rules_for_frontend(),
+            "rules_json": rules_json,
             "recruiter_name": generation.get_default_recruiter_name(),
         },
     )

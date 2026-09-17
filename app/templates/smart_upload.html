@@ -102,13 +102,6 @@
                 <div class="src-files-list" id="srcFilesList"></div>
             </div>
 
-            {% if not recruiter_name %}
-            <div id="recruiterSetupBanner" style="margin:0 0 16px;padding:12px 14px;background:#fef3f2;border:1px solid #f5c6c4;border-radius:var(--radius-sm);color:#8a2b25;font-size:0.88rem;line-height:1.6;">
-                <strong>Set Recruiter Name</strong> — the TeamHR Backend Mail workbook needs a Recruiter Name.
-                <a href="/settings" style="margin-left:6px;font-weight:600;">Set it now</a> or type it below per candidate.
-            </div>
-            {% endif %}
-
             <div class="review-form-grid" id="reviewForm">
                 <!-- Name -->
                 <div class="rf-field">
@@ -163,7 +156,8 @@
                 <!-- Role / Designation -->
                 <div class="rf-field">
                     <label class="rf-label" for="rfRole">Role / Designation</label>
-                    <input type="text" id="rfRole" class="global-search" style="width:100%">
+                    <input type="text" id="rfRole" class="global-search" style="width:100%" placeholder="Search / select an official role" autocomplete="off">
+                    <div id="rfRoleDrop" class="hub-drop" style="display:none;"></div>
                     <div class="rf-meta">
                         <span class="cf-badge" id="cfRole"></span>
                         <span class="rf-source" id="srcRole"></span>
@@ -247,16 +241,17 @@
                     <input type="text" id="rfFacilityType" class="global-search" style="width:100%">
                 </div>
 
-                <!-- Aadhaar (masked, read-only) -->
+                <!-- Aadhaar -->
                 <div class="rf-field">
-                    <label class="rf-label" for="rfAadhaar">Aadhaar (masked)</label>
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <input type="text" id="rfAadhaar" class="global-search" style="width:100%" readonly>
-                        <button type="button" id="btnRevealAadhaar" class="btn btn-sm btn-outline" style="white-space:nowrap;">Reveal</button>
-                    </div>
+                    <label class="rf-label" for="rfAadhaar">Aadhaar</label>
+                    <input type="text" id="rfAadhaar" class="global-search" style="width:100%" placeholder="12-digit Aadhaar number" autocomplete="off">
                     <div class="rf-meta">
-                        <span class="badge-readonly">Auto-masked; full number never saved in any draft</span>
+                        <span class="cf-badge" id="cfAadhaar"></span>
+                        <span class="rf-source" id="srcAadhaar"></span>
+                        <button type="button" class="evidence-toggle" id="evAadhaar" style="display:none">Why?</button>
                     </div>
+                    <div class="field-error" id="aadhaarError" style="display:none;color:var(--accent-red);font-size:0.78rem;margin-top:4px;"></div>
+                    <div class="evidence-details" id="evAadhaarDetail" style="display:none"></div>
                 </div>
 
                 <!-- Address (full-width) -->
@@ -292,6 +287,10 @@
 
     <script>
     (function() {
+        /* ── Server-backed rules (official roles, cost codes, aliases) ───── */
+        var RULES_DATA = {{ rules_json | safe }};
+        var COST_CODE_ROLES = RULES_DATA.cost_code_roles || {};
+
         /* ── DOM refs ──────────────────────────────────────────────────── */
         var uploadZone = document.getElementById("uploadZone");
         var fileInput  = document.getElementById("fileInput");
@@ -672,13 +671,28 @@
             }
 
             var aadhaarInput = document.getElementById("rfAadhaar");
-            aadhaarInput.value = data.aadhaar_masked || "XXXX XXXX ?";
-            aadhaarInput.setAttribute("data-masked", aadhaarInput.value);
-            var revealBtn = document.getElementById("btnRevealAadhaar");
-            if (revealBtn) revealBtn.textContent = "Reveal";
+            var fullAadhaar = data.aadhaar_number || "";
+            aadhaarInput.value = fullAadhaar || "";
+            var aadhaarBadge = document.getElementById("cfAadhaar");
+            var aadhaarSrc = document.getElementById("srcAadhaar");
+            if (aadhaarBadge) {
+                if (fullAadhaar) {
+                    aadhaarBadge.textContent = "HIGH";
+                    aadhaarBadge.className = "cf-badge cf-high";
+                } else {
+                    aadhaarBadge.textContent = "MISSING";
+                    aadhaarBadge.className = "cf-badge cf-missing";
+                }
+            }
+            if (aadhaarSrc) {
+                aadhaarSrc.textContent = fullAadhaar ? "Source: Aadhaar" : "";
+            }
+            attachEvidence("evAadhaar", "evAadhaarDetail", data.evidence, "aadhaar");
+            clearAadhaarHint();
 
             var ft = data.facility_type || "";
             document.getElementById("rfFacilityType").value = ft;
+            syncRoleDefault();
 
             if (data.salary && data.salary.display) {
                 document.getElementById("rfSalary").value = data.salary.display;
@@ -835,6 +849,7 @@
             }
             showLocationBadge();
             hideFacilityDrop();
+            onSmartCostCodeChange();
         }
 
         function hideFacilityDrop() {
@@ -923,22 +938,177 @@
             }
         }
 
-        var revealBtn = document.getElementById("btnRevealAadhaar");
-        if (revealBtn) {
-            revealBtn.addEventListener("click", function () {
-                var input = document.getElementById("rfAadhaar");
-                var d = extractionData || {};
-                var revealed = !input.getAttribute("data-full") && d.aadhaar_number;
-                if (revealed) {
-                    input.value = d.aadhaar_number;
-                    input.setAttribute("data-full", "1");
-                    revealBtn.textContent = "Mask";
-                } else {
-                    input.value = input.getAttribute("data-masked") || "XXXX XXXX ?";
-                    input.removeAttribute("data-full");
-                    revealBtn.textContent = "Reveal";
+        /* ── Role / Designation searchable dropdown ───────────────────────── */
+        var roleInput = document.getElementById("rfRole");
+        var roleDrop = document.getElementById("rfRoleDrop");
+        var roleSelIndex = -1;
+
+        function currentCostCode() {
+            var cc = document.getElementById("rfCostCode").value.trim();
+            if (cc) return cc;
+            var d = extractionData || {};
+            return (d.cost_code && d.cost_code.value) || "";
+        }
+
+        function costCodePrefix(cc) {
+            return (RULES_DATA.cost_codes && RULES_DATA.cost_codes[cc] &&
+                    RULES_DATA.cost_codes[cc].prefix) || "";
+        }
+
+        function officialRolesForCostCode(cc) {
+            if (cc && COST_CODE_ROLES[cc] && COST_CODE_ROLES[cc].length) {
+                return COST_CODE_ROLES[cc];
+            }
+            var seen = {}, out = [];
+            for (var k in COST_CODE_ROLES) {
+                (COST_CODE_ROLES[k] || []).forEach(function (r) {
+                    if (!seen[r]) { seen[r] = 1; out.push(r); }
+                });
+            }
+            return out;
+        }
+
+        function markRoleSelected(name, opts) {
+            opts = opts || {};
+            roleInput.value = name;
+            roleInput.setAttribute("data-role-picked", "1");
+            var badge = document.getElementById("cfRole");
+            var src = document.getElementById("srcRole");
+            if (badge) {
+                badge.textContent = opts.auto ? "AUTO" : "OFFICIAL";
+                badge.className = "cf-badge " + (opts.auto ? "cf-review" : "cf-high");
+            }
+            if (src) { src.textContent = opts.source || "Official role"; }
+        }
+
+        function renderRoleOptions(filter) {
+            if (!roleDrop) return;
+            var cc = currentCostCode();
+            var roles = officialRolesForCostCode(cc);
+            var q = (filter || "").trim().toLowerCase();
+            var pfx = costCodePrefix(cc);
+            var sub = cc && pfx ? (cc + " · " + pfx + " roles")
+                                : (cc ? "Official " + cc + " role" : "Official role");
+            var shown = [];
+            for (var i = 0; i < roles.length; i++) {
+                if (!q || roles[i].toLowerCase().indexOf(q) !== -1) shown.push(roles[i]);
+            }
+            roleDrop.innerHTML = "";
+            roleSelIndex = -1;
+            if (!shown.length) {
+                var empty = document.createElement("div");
+                empty.className = "hub-empty";
+                empty.textContent = cc ? ("No official role matches within " + cc + ".") : "No roles found.";
+                roleDrop.appendChild(empty);
+            } else {
+                shown.forEach(function (name, idx) {
+                    var btn = document.createElement("button");
+                    btn.type = "button";
+                    btn.className = "hub-opt";
+                    btn.setAttribute("data-role", name);
+                    btn.setAttribute("data-i", String(idx));
+                    btn.innerHTML = '<span class="hub-main">' + escapeHtml(name) + "</span>" +
+                        '<span class="hub-sub">' + escapeHtml(sub) + "</span>";
+                    btn.addEventListener("mousedown", function (ev) {
+                        ev.preventDefault();
+                        markRoleSelected(btn.getAttribute("data-role"), { source: "Official role" });
+                        hideRoleDrop();
+                    });
+                    roleDrop.appendChild(btn);
+                });
+            }
+            roleDrop.style.display = "";
+        }
+
+        function hideRoleDrop() { if (roleDrop) roleDrop.style.display = "none"; }
+
+        function syncRoleDefault() {
+            if (!roleInput || roleInput.value.trim()) return;  // never clobber typed/picked role
+            var cc = currentCostCode();
+            var roles = officialRolesForCostCode(cc);
+            if (!cc || !roles.length) return;
+            var dft = roles[0];
+            markRoleSelected(dft, { auto: true, source: "Auto — default for " + cc });
+            if (typeof showToast === "function") {
+                showToast("Role defaulted to " + dft + " for " + cc + ". Adjust if needed.", "info");
+            }
+        }
+
+        function onSmartCostCodeChange() {
+            var cc = currentCostCode();
+            var roles = officialRolesForCostCode(cc);
+            var cur = roleInput.value.trim();
+            if (cur) {
+                var rolePfx = cur.split(" - ", 1)[0].toUpperCase();
+                var ccPfx = costCodePrefix(cc).toUpperCase();
+                if (ccPfx && rolePfx && ccPfx !== rolePfx) {
+                    roleInput.value = "";
+                    roleInput.removeAttribute("data-role-picked");
+                } else if (roles.length) {
+                    var stillValid = roles.indexOf(cur) !== -1;
+                    var pfxOk = !ccPfx || rolePfx === ccPfx;
+                    if (!stillValid && pfxOk) {
+                        /* A typed/alias value may still resolve via fuzzy rules;
+                           keep it but mark for review instead of clobbering. */
+                        var badge = document.getElementById("cfRole");
+                        if (badge) { badge.textContent = "REVIEW"; badge.className = "cf-badge cf-review"; }
+                    }
                 }
+            }
+            if (!roleInput.value.trim()) syncRoleDefault();
+        }
+
+        if (roleInput) {
+            roleInput.addEventListener("focus", function () { renderRoleOptions(roleInput.value); });
+            roleInput.addEventListener("input", function () {
+                roleInput.removeAttribute("data-role-picked");
+                renderRoleOptions(roleInput.value);
             });
+            roleInput.addEventListener("blur", function () { setTimeout(hideRoleDrop, 150); });
+            roleInput.addEventListener("keydown", function (e) {
+                var opts = roleDrop ? roleDrop.querySelectorAll(".hub-opt") : [];
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    if (!opts.length) return;
+                    roleSelIndex = (e.key === "ArrowDown")
+                        ? (roleSelIndex + 1) % opts.length
+                        : (roleSelIndex - 1 + opts.length) % opts.length;
+                    for (var i = 0; i < opts.length; i++) {
+                        opts[i].style.background = (i === roleSelIndex) ? "#f1f5f9" : "";
+                    }
+                    return;
+                }
+                if (e.key === "Enter" && roleSelIndex >= 0 && opts[roleSelIndex]) {
+                    e.preventDefault();
+                    markRoleSelected(opts[roleSelIndex].getAttribute("data-role"), { source: "Official role" });
+                    hideRoleDrop();
+                }
+                if (e.key === "Escape") hideRoleDrop();
+            });
+        }
+        var rfCostCodeRole = document.getElementById("rfCostCode");
+        if (rfCostCodeRole) rfCostCodeRole.addEventListener("change", onSmartCostCodeChange);
+
+        /* ── Aadhaar field: live 12-digit hint (non-blocking) ─────────────── */
+        var aadhaarErrEl = document.getElementById("aadhaarError");
+        function clearAadhaarHint() {
+            if (aadhaarErrEl) { aadhaarErrEl.style.display = "none"; aadhaarErrEl.textContent = ""; }
+        }
+        function refreshAadhaarHint() {
+            if (!aadhaarErrEl) return;
+            var raw = aadhaarInput.value.trim();
+            if (!raw) { clearAadhaarHint(); return; }
+            var digits = raw.replace(/\D/g, "");
+            if (digits.length !== 12) {
+                aadhaarErrEl.textContent = "Aadhaar should be exactly 12 digits (" + digits.length + " found).";
+                aadhaarErrEl.style.display = "";
+            } else {
+                aadhaarErrEl.style.display = "none";
+            }
+        }
+        if (aadhaarInput) {
+            aadhaarInput.addEventListener("input", refreshAadhaarHint);
+            aadhaarInput.addEventListener("blur", refreshAadhaarHint);
         }
 
         /* ── Multi-candidate session: approved counts + Generate Excel (N) ── */
@@ -1027,6 +1197,7 @@
                 location_code: fac.getAttribute("data-location") || "",
                 role: document.getElementById("rfRole").value.trim(),
                 designation: document.getElementById("rfRole").value.trim(),
+                salary: document.getElementById("rfSalary").value.trim(),
                 salary_normalized: document.getElementById("rfSalary").value.trim(),
                 salary_display: document.getElementById("rfSalary").value.trim(),
                 cost_code: document.getElementById("rfCostCode").value.trim(),
@@ -1038,7 +1209,7 @@
                 gender: document.getElementById("rfGender").value.trim(),
                 father_name: document.getElementById("rfFatherName").value.trim(),
                 pin_code: document.getElementById("rfPinCode").value.trim(),
-                aadhaar_number: d.aadhaar_number || "",
+                aadhaar_number: document.getElementById("rfAadhaar").value.trim() || d.aadhaar_number || "",
                 batch_id: d.batch_id || 1,
                 candidate_number: d.candidate_number || 1,
                 source_files: (d.source_files || []).map(function(f) { return f.filename; }),

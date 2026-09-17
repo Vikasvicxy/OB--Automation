@@ -1144,16 +1144,45 @@ def resolve_facility_type(query: str) -> tuple[Optional[str], Optional[str]]:
 # ── Salary Normalization ─────────────────────────────────────────────────────
 
 
-def normalize_salary(raw: str) -> tuple[Optional[int], Optional[str]]:
+def salary_value(data: dict) -> object:
+    """Canonical candidate salary value from any supported payload key.
+
+    The authoritative field is ``salary`` (the manually-reviewed value). Older
+    clients also send ``salary_normalized`` / ``salary_display``; explicitly
+    empty values NEVER shadow a populated sibling, so a stale ``salary: ""``
+    still falls through to ``salary_display`` before validation/persistence.
+    """
+    for key in ("salary", "salary_normalized", "salary_display"):
+        val = data.get(key)
+        if val is not None and str(val).strip() != "":
+            return val
+    return ""
+
+
+def normalize_salary(raw: object) -> tuple[Optional[int], Optional[str]]:
     """Normalize salary input to integer rupees.
 
-    Accepts: 18k, 18 k, 18 K, 18.5k, 18.5 k, ₹18,000, 18000, 18,000, etc.
+    Accepts: 18k, 18 k, 18 K, 18.5k, 18.5 k, ₹18,000, 18000, 18,000, "15000",
+    and plain numeric payloads already converted to int/float by the client.
     Also accepts a trailing 'k' with optional whitespace, and ignores a
     surrounding 'salary' keyword. Returns (integer_value, error_or_None).
+
+    A populated numeric string like "15000" is NEVER treated as empty; absolute
+    amounts >= 1000 are required so a leftover bare digit from a timestamp is
+    not accepted.
     """
-    if raw is None or not str(raw).strip():
+    if raw is None:
         return None, "Salary is required"
+    if isinstance(raw, bool):
+        return None, "Invalid salary format"
+    if isinstance(raw, (int, float)):
+        if raw < 1000:
+            return None, "Invalid salary format"
+        return int(raw), None
+
     raw = str(raw).strip().lower().replace(",", "")
+    if not raw:
+        return None, "Salary is required"
 
     # Strip inline clock timestamps ("10:30 am", "18:45") so they can never be
     # read as a salary. A string that is ONLY a timestamp becomes empty below
@@ -1168,6 +1197,11 @@ def normalize_salary(raw: str) -> tuple[Optional[int], Optional[str]]:
     # timestamp is not accepted.
     m = re.search(r"(?:rs|inr)?\s*₹?\s*(\d+(?:\.\d+)?)\s*(k)?\b", raw)
     if not m:
+        return None, "Invalid salary format"
+    # Reject negatives ("-18000", "Rs -15 k", "salary -18k"): matching below is
+    # digit-based so a leading minus must be detected on the matched prefix.
+    prefix = raw[: m.start()].rstrip()
+    if prefix.endswith("-"):
         return None, "Invalid salary format"
     number, suffix = m.group(1), m.group(2)
     try:
@@ -1276,8 +1310,8 @@ def validate_candidate(data: dict) -> dict[str, str]:
         )
 
     # Salary
-    salary_raw = data.get("salary", "")
-    _, salary_err = normalize_salary(str(salary_raw))
+    salary_raw = salary_value(data)
+    _, salary_err = normalize_salary(salary_raw)
     if salary_err:
         errors["salary"] = salary_err
 
@@ -1332,18 +1366,37 @@ def normalize_gender(raw: object) -> tuple[str, Optional[str]]:
 
 
 def normalize_pin_code(raw: object) -> tuple[str, Optional[str]]:
-    """Extract a 6-digit PIN from free text (prefix + 6 digits)."""
+    """Extract an exact 6-digit PIN from free text (prefix + 6 digits).
+
+    The value is preserved as a string and never parsed as a date. A PIN with
+    more than 6 digits (e.g. stray Aadhaar/mobile digits) is rejected rather
+    than silently truncated. Returns ("", None) when blank (optional / review).
+    """
     if raw is None:
         return "", None
     digits = re.sub(r"\D", "", str(raw))
-    if len(digits) >= 6:
-        digits = digits[:6]
+    if len(digits) == 6:
         if digits[0] in "123456789":
             return digits, None
-        return "", "Pin Code must not start with 0."
+        return "", "PIN Code must contain 6 digits"
     if digits:
-        return "", "Pin Code must be exactly 6 digits."
+        return "", "PIN Code must contain 6 digits"
     return "", None
+
+
+def normalize_aadhaar(raw: object) -> str:
+    """Normalize an Aadhaar number to a 12-digit string; blank when not 12.
+
+    Spaces/dashes/OCR artifacts are stripped. Anything that is not exactly 12
+    digits is cleared (the review screen resolves it) so a partial number is
+    never persisted as if it were authoritative.
+    """
+    if raw is None:
+        return ""
+    digits = re.sub(r"\D", "", str(raw))
+    if len(digits) == 12:
+        return digits
+    return ""
 
 
 def normalize_father_name(raw: object) -> tuple[str, Optional[str]]:
