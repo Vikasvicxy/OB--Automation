@@ -2237,6 +2237,10 @@ DRAFT_ALLOWED_KEYS = {
     "team", "role", "designation", "facility_type", "facility", "facility_name",
     "location_code", "salary", "salary_display", "aadhaar_filename",
     "batch_id", "candidate_num", "candidateId", "draft_type",
+    # Reviewed/backend fields the resume flow restores. None are sensitive
+    # (Aadhaar number and full address are intentionally never drafted).
+    "doj", "gender", "father_name", "pin_code", "facility_ref",
+    "candidate_number", "candidateNum", "source_files",
 }
 
 

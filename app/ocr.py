@@ -377,12 +377,65 @@ def extract_aadhaar_name(lines: list[str]) -> tuple[str, str]:
     return "", "Missing"
 
 
-def extract_dob(lines: list[str]) -> Optional[str]:
-    """Extract DOB in DD/MM/YYYY or 'Year of Birth' + year."""
+# Tokens that mark an AADHAAR ISSUE / ENROLMENT date line (NOT a birth date).
+# A date that shares a line with these labels is an issue/enrolment/update
+# timestamp and must never be selected as the candidate's DOB.
+_DOB_ISSUE_DATE_TOKENS = ("issue", "issued", "enrol", "enroll", "update",
+                          "signature")
+
+_DOB_LABEL_TOKENS = ("dob", "date of birth", "birth")
+
+
+def _line_is_dob_label(low: str) -> bool:
+    return any(tok in low for tok in _DOB_LABEL_TOKENS)
+
+
+def _line_is_issue_date(low: str) -> bool:
+    return any(tok in low for tok in _DOB_ISSUE_DATE_TOKENS)
+
+
+_DATE_RE = re.compile(r"(\d{2})[/\-](\d{2})[/\-](\d{4})")
+
+
+def _date_candidates(lines: list[str]) -> list[dict]:
+    """Return candidate DOBs with context for every DD/MM/YYYY found.
+
+    Each item: {"value": "DD/MM/YYYY", "year": int, "labeled": bool,
+                "issue": bool} where ``labeled`` means the date shares its line
+    with a DOB/Date-of-Birth label and ``issue`` means the date shares its line
+    with an issue/enrolment/update/signature label.
+    """
+    out = []
     for line in lines:
-        m = re.search(r"(\d{2})[/\-](\d{2})[/\-](\d{4})", line)
-        if m:
-            return f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
+        low = line.lower()
+        labeled = _line_is_dob_label(low)
+        issue = _line_is_issue_date(low)
+        for m in _DATE_RE.finditer(line):
+            out.append({
+                "value": f"{m.group(1)}/{m.group(2)}/{m.group(3)}",
+                "year": int(m.group(3)),
+                "labeled": labeled,
+                "issue": issue,
+            })
+    return out
+
+
+def extract_dob(lines: list[str]) -> Optional[str]:
+    """Extract DOB, strongly preferring an explicit DOB label and rejecting
+    Aadhaar issue/enrolment dates.
+
+    Priority:
+      1. A date on the same line as a DOB / Date of Birth label.
+      2. 'Year of Birth' + year near a 'birth' label.
+      3. The EARLIEST-year date candidate (a birth date is always older than
+         the card's issue/enrolment date), excluding dates co-located with an
+         issue/enrolment/update/signature label.
+    """
+    cands = _date_candidates(lines)
+    for c in cands:
+        if c["labeled"]:
+            return c["value"]
+
     # Year of birth: capture a 18xx/19xx/20xx year near 'birth'
     for i, line in enumerate(lines):
         if "birth" in line.lower():
@@ -390,6 +443,53 @@ def extract_dob(lines: list[str]) -> Optional[str]:
                 m = re.search(r"\b(1[89]\d\d|20\d\d)\b", cand)
                 if m:
                     return m.group(1)
+
+    issue_free = [c for c in cands if not c["issue"]]
+    pool = issue_free if issue_free else cands
+    if pool:
+        pool.sort(key=lambda c: c["year"])
+        return pool[0]["value"]
+    return None
+
+
+# ── Gender / father name / PIN extraction (flat-text path) ───────────────────
+
+
+def extract_gender(lines: list[str]) -> Optional[str]:
+    """Extract gender from a standalone Male/Female line (Aadhaar only)."""
+    for line in lines:
+        if _RE_GENDER_LINE.match(line.strip()):
+            return line.strip().capitalize()
+    return None
+
+
+def extract_father_name(lines: list[str]) -> Optional[str]:
+    """Extract a father/guardian name from relation markers (S/O, D/O, C/O).
+
+    Accepts "S/O: Gangu", "S/o  Gangu", 'Father's Name: ...'. Returns the bare
+    name (relation marker stripped), or None.
+    """
+    for line in lines:
+        low = line.strip().lower()
+        m = re.search(r"(?:s/o|d/o|c/o|w/o|father(?:'s|es)?\s*name)", low)
+        if not m:
+            continue
+        rest = re.sub(r"(?:s/o|d/o|c/o|w/o|father(?:'s|es)?\s*name)", " ", low, flags=re.IGNORECASE)
+        rest = re.sub(r"[\s:/,.\-]+", " ", rest).strip()
+        if len(rest) >= 2 and not any(c.isdigit() for c in rest):
+            return rest.title()
+    return None
+
+
+def extract_pin_code(lines: list[str]) -> Optional[str]:
+    """Extract an exact 6-digit PIN from an address/line."""
+    for line in lines:
+        for m in re.finditer(r"(?<!\d)(\d{6})(?!\d)", line):
+            digits = m.group(1)
+            if digits[0] in "123456789":
+                norm, _err = rules.normalize_pin_code(digits)
+                if norm:
+                    return norm
     return None
 
 
@@ -411,7 +511,19 @@ _ADDRESS_TERMINATORS = {
     "virtual id", "dob", "date of birth", "year of birth", "gender",
     "male", "female", "enrolment", "enrollment", "signature",
     "i humbly declare", "i hereby declare",
+    "issue", "issued", "issued date", "update", "updated",
 }
+
+# Contact/identity line prefixes (e.g. "Mobile: 9398969253", "WhatsApp: +91..")
+# that appear BELOW a postal address block. The address must stop at the postal
+# boundary and never include these.
+_ADDRESS_TRAILING_CONTACT = re.compile(r"(mobile|mob|phone|tel|whatsapp|whatapp)"
+                                       r"[\s:.\-]*(?:91[-\s]?)?\d{5,}", re.IGNORECASE)
+
+# A line that is ENTIRELY the Aadhaar number (4-4-4) or ENTIRELY a standalone
+# date/issue-date. These always terminate the postal address block.
+_ADDRESS_ENDING_NUMERIC = re.compile(
+    r"^\s*(\d{4}[\s]?\d{4}[\s]?\d{4}|\d{2}[/\-]\d{2}[/\-]\d{4})\s*$")
 
 
 def _has_address_anchor(line: str) -> bool:
@@ -456,11 +568,19 @@ def extract_address(lines: list[str]) -> str:
         # A recognisable non-address header ends the block.
         if any(t in low for t in _ADDRESS_TERMINATORS):
             break
+        # An Aadhaar number / standalone date line ends the block too.
+        if _ADDRESS_ENDING_NUMERIC.match(line.strip()):
+            break
         if not line.strip():
             if parts:
                 break
             continue
         parts.append(line.strip())
+
+    # Strip trailing contact lines ("Mobile: 9398969253") so a postal address
+    # never ends with a mobile number / WhatsApp footer.
+    while parts and _ADDRESS_TRAILING_CONTACT.search(parts[-1]):
+        parts.pop()
 
     text = " ".join(parts).strip()
     if len(text) < 8:
@@ -547,16 +667,35 @@ def extract_role_text(lines: list[str]) -> Optional[str]:
     return None
 
 
+# Hub-bearing label lines (the value after the separator is the candidate hub).
+_HUB_LABEL_RE = re.compile(
+    r"^\s*(?:work\s*location|location|hub|facility|place|area|city|centre|"
+    r"center|base|site|current\s*location|branch)"
+    r"\s*[:=]\s*(.+?)\s*$", re.IGNORECASE)
+
+# Non-hub label lines that must never be treated as facility evidence.
+_HUB_SKIP_LABELS = re.compile(
+    r"^\s*(?:name|mobile|mob|phone|whatsapp|contact|salary|pay|ctc|role|"
+    r"designation|post|id|aadhaar|dob|gender|email|status|date|shift|remarks?|"
+    r"notes?|experience|age|village|pin|caste|religion)"
+    r"\s*[:=]\s*", re.IGNORECASE)
+
+
 def extract_hub_text(lines: list[str]) -> Optional[str]:
     """Return a short candidate hub text (non-number, non-label, non-role line)."""
     for line in lines:
         line = line.strip()
-        if not line or re.search(r"\d", line):
+        if not line:
+            continue
+        m = _HUB_LABEL_RE.match(line)
+        if m:
+            line = m.group(1).strip()
+        if _HUB_SKIP_LABELS.match(line) or re.search(r"\d", line):
             continue
         if line.lower() in {
             "name", "address", "government of india",
             "unique identification authority of india", "aadhaar", "dob",
-            "date of birth", "lm", "fm",
+            "date of birth", "lm", "fm", "f/m", "first mile", "last mile",
         }:
             continue
         # Skip role-bearing lines (e.g. "LM sorter" is a role, not a hub).
@@ -678,6 +817,9 @@ def run_extraction(files: list[dict]) -> dict:
     name_extraction_conf = "Missing"
     dob: Optional[str] = None
     address = ""
+    gender = ""
+    father_name = ""
+    pin_code = ""
 
     if aadhaar_ocr_lines and has_layout_data:
         try:
@@ -687,18 +829,22 @@ def run_extraction(files: list[dict]) -> dict:
             dob_ev = layout["dob"]
             addr_ev = layout["address"]
             num_ev = layout["aadhaar_number"]
+            gender_ev = layout.get("gender")
 
             aadhaar_num = num_ev.value if num_ev.value else None
             name = name_ev.value or ""
             name_extraction_conf = name_ev.confidence if name else "Missing"
             dob = dob_ev.value if dob_ev.value else None
             address = addr_ev.value or ""
+            if gender_ev and gender_ev.value:
+                gender, _ = rules.normalize_gender(gender_ev.value)
 
             _safe_log("run_extraction: layout parser used",
                       name_conf=name_extraction_conf,
                       has_aadhaar=bool(aadhaar_num),
                       has_dob=bool(dob),
-                      has_address=bool(address))
+                      has_address=bool(address),
+                      has_gender=bool(gender))
         except Exception as exc:  # noqa: BLE001
             _safe_log("run_extraction: layout parser failed, using flat-text",
                       error=str(exc))
@@ -714,6 +860,18 @@ def run_extraction(files: list[dict]) -> dict:
         dob = extract_dob(aadhaar_lines) if aadhaar_lines else None
     if not address:
         address = extract_address(aadhaar_lines) if aadhaar_lines else ""
+    if not gender:
+        g = extract_gender(aadhaar_lines) if aadhaar_lines else None
+        if g:
+            gender, _ = rules.normalize_gender(g)
+    if not father_name:
+        f = extract_father_name(aadhaar_lines) if aadhaar_lines else None
+        if f:
+            father_name, _ = rules.normalize_father_name(f)
+    if not pin_code:
+        p = extract_pin_code(aadhaar_lines) if aadhaar_lines else None
+        if p:
+            pin_code, _ = rules.normalize_pin_code(p)
 
     # -- Screenshot / document onboarding fields
     mobile, mobile_err = extract_mobile(screenshot_lines)
@@ -761,6 +919,9 @@ def run_extraction(files: list[dict]) -> dict:
         aadhaar_num=aadhaar_num,
         dob=dob,
         address=address,
+        gender=gender,
+        father_name=father_name,
+        pin_code=pin_code,
         salary=salary,
         role_text=role_text,
         hub_text=hub_text,
@@ -792,13 +953,16 @@ def _build_result(
     aadhaar_num: Optional[str],
     dob: Optional[str],
     address: str,
-    salary: list[tuple[str, int]],
-    role_text: Optional[str],
-    hub_text: Optional[str],
-    aadhaar_seen: bool,
-    screenshot_seen: bool,
-    files: list[dict],
-    per_file: list[dict],
+    gender: str = "",
+    father_name: str = "",
+    pin_code: str = "",
+    salary: list[tuple[str, int]] = (),
+    role_text: Optional[str] = None,
+    hub_text: Optional[str] = None,
+    aadhaar_seen: bool = False,
+    screenshot_seen: bool = False,
+    files: Optional[list[dict]] = None,
+    per_file: Optional[list[dict]] = None,
     evidence: Optional[dict] = None,
 ) -> dict:
 
@@ -892,6 +1056,10 @@ def _build_result(
               salary_conf=salary_conf,
               cost_code=bool(cost_code))
 
+    gender_val, _ = rules.normalize_gender(gender)
+    father_val, _ = rules.normalize_father_name(father_name)
+    pin_val, _ = rules.normalize_pin_code(pin_code)
+
     return {
         "name": {"value": name_val, "source": "Aadhaar" if aadhaar_seen else "Manual", "confidence": name_conf},
         "mobile": {"value": mobile or "", "source": mobile_source, "confidence": mobile_conf, "error": mobile_err},
@@ -903,6 +1071,12 @@ def _build_result(
         "role": {"value": role_val, "source": role_source, "confidence": role_conf},
         "facility": {"value": facility_val, "source": facility_source, "confidence": facility_conf},
         "location_code": location_code,
+        "gender": {"value": gender_val, "source": "Aadhaar" if aadhaar_seen else "Manual",
+                   "confidence": "High" if gender_val else "Missing"},
+        "father_name": {"value": father_val, "source": "Aadhaar" if aadhaar_seen else "Manual",
+                        "confidence": "High" if father_val else "Missing"},
+        "pin_code": {"value": pin_val, "source": "Aadhaar" if aadhaar_seen else "Manual",
+                     "confidence": "High" if pin_val else "Missing"},
         "salary": {
             "value": salary_val,
             "display": salary_display,
@@ -946,6 +1120,9 @@ def _empty_result(files: list[dict], per_file: list[dict], fallback: bool = True
         "salary": {"value": None, "display": "", "source": "Manual", "confidence": "Missing"},
         "migrant": "No",
         "dob": {"value": "", "source": "Manual", "confidence": "Missing"},
+        "gender": {"value": "", "source": "Manual", "confidence": "Missing"},
+        "father_name": {"value": "", "source": "Manual", "confidence": "Missing"},
+        "pin_code": {"value": "", "source": "Manual", "confidence": "Missing"},
         "aadhaar_masked": "XXXX XXXX ?",
         "aadhaar_number": "",
         "address": {"value": "", "source": "Manual", "confidence": "Missing"},

@@ -260,22 +260,57 @@ class AadhaarLayoutParser:
 
     # ── DOB ─────────────────────────────────────────────────────────────
 
+    # Tokens that mark an ISSUE / ENROLMENT date line (NOT a birth date).
+    _ISSUE_TOKENS = ("issue", "issued", "enrol", "enroll", "update", "signature")
+
     def _extract_dob(self) -> FieldEvidence:
-        """Extract DOB in DD/MM/YYYY or 'Year of Birth' + year."""
-        # Pass 1: explicit DD/MM/YYYY pattern
+        """Extract DOB, preferring an explicit DOB label and rejecting the
+        Aadhaar issue/enrolment date.
+
+        Priority:
+          1. A DD/MM/YYYY on the SAME line as a DOB / Date of Birth label
+             (highest confidence).
+          2. The next line after a DOB / Date of Birth label line.
+          3. 'Year of Birth' + year near a 'birth' label.
+          4. The EARLIEST-year DD/MM/YYYY that is NOT an issue/enrolment date
+             (a birth date is always older than the card's issue date). As a
+             last resort the earliest-year date is used.
+        """
+        # Pass 1: date on an explicit DOB label line.
         for line in self.lines:
-            m = _DOB_RE.search(line.text)
-            if m:
-                dob_str = f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
-                return FieldEvidence(
-                    value=dob_str,
-                    confidence="High",
-                    source="Aadhaar",
-                    reason="DOB pattern detected in OCR line",
-                    source_lines=[line.text],
-                    box_refs=[(line.x1, line.y1, line.x2, line.y2)],
-                )
-        # Pass 2: Year of birth near 'birth' label
+            low = line.label_lower
+            if "dob" in low or "date of birth" in low or "birth" in low:
+                if any(tok in low for tok in self._ISSUE_TOKENS):
+                    continue
+                m = _DOB_RE.search(line.text)
+                if m:
+                    return FieldEvidence(
+                        value=self._fmt_date(m),
+                        confidence="High",
+                        source="Aadhaar",
+                        reason="DOB label on the same line",
+                        source_lines=[line.text],
+                        box_refs=[(line.x1, line.y1, line.x2, line.y2)],
+                    )
+
+        # Pass 2: date on the line immediately after a DOB label line.
+        for i, line in enumerate(self.lines):
+            low = line.label_lower
+            if ("dob" in low or "date of birth" in low or "birth" in low) and \
+                    not any(tok in low for tok in self._ISSUE_TOKENS):
+                for cand in self.lines[i:i + 3]:
+                    m = _DOB_RE.search(cand.text)
+                    if m:
+                        return FieldEvidence(
+                            value=self._fmt_date(m),
+                            confidence="High",
+                            source="Aadhaar",
+                            reason="DOB label on the preceding line",
+                            source_lines=[cand.text],
+                            box_refs=[(cand.x1, cand.y1, cand.x2, cand.y2)],
+                        )
+
+        # Pass 3: year of birth near 'birth' label.
         for i, line in enumerate(self.lines):
             if "birth" in line.label_lower:
                 for cand in self.lines[i:i + 3]:
@@ -289,7 +324,37 @@ class AadhaarLayoutParser:
                             source_lines=[cand.text],
                             box_refs=[(cand.x1, cand.y1, cand.x2, cand.y2)],
                         )
+
+        # Pass 4: earliest non-issue date; fall back to the earliest date.
+        candidates: list[tuple[str, int]] = []  # (value, year)
+        issue_candidates: list[tuple[str, int]] = []
+        for line in self.lines:
+            low = line.label_lower
+            is_issue = any(tok in low for tok in self._ISSUE_TOKENS)
+            for m in _DOB_RE.finditer(line.text):
+                db = f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
+                year = int(m.group(3))
+                if is_issue:
+                    issue_candidates.append((db, year))
+                else:
+                    candidates.append((db, year))
+        pool = candidates if candidates else issue_candidates
+        if pool:
+            pool.sort(key=lambda c: c[1])
+            db = pool[0][0]
+            return FieldEvidence(
+                value=db,
+                confidence="Review",
+                source="Aadhaar",
+                reason="Earliest date selected (birth predates issue date)",
+                source_lines=[],
+                box_refs=[],
+            )
         return FieldEvidence(source="Aadhaar", reason="Not found")
+
+    @staticmethod
+    def _fmt_date(m) -> str:
+        return f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
 
     # ── Gender ──────────────────────────────────────────────────────────
 

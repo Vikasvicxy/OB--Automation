@@ -304,6 +304,7 @@
         var extractNoticeText = document.getElementById("extractNoticeText");
         var uploadSection = document.getElementById("uploadSection");
         var reviewSection = document.getElementById("reviewSection");
+        var aadhaarInput = document.getElementById("rfAadhaar");
 
         var files = [];
         var extractionData = null;
@@ -335,6 +336,7 @@
                 gender: document.getElementById("rfGender").value.trim(),
                 father_name: document.getElementById("rfFatherName").value.trim(),
                 pin_code: document.getElementById("rfPinCode").value.trim(),
+                salary: document.getElementById("rfSalary").value.trim(),
                 batch_id: d.batch_id || 1,
                 candidate_number: d.candidate_number || 1,
                 candidateNum: d.candidate_number || 1
@@ -410,6 +412,7 @@
             set("rfRole", p.role); set("rfCostCode", p.cost_code);
             set("rfDoj", p.doj); set("rfGender", p.gender);
             set("rfFatherName", p.father_name); set("rfPinCode", p.pin_code);
+            set("rfSalary", p.salary);
             var fac = document.getElementById("rfFacility");
             if (fac) {
                 if (p.facility_ref) fac.setAttribute("data-facility-ref", p.facility_ref);
@@ -430,6 +433,7 @@
             }
             document.getElementById("reviewSection").style.display = "block";
             document.getElementById("recoveryBanner").style.display = "none";
+            onSmartCostCodeChange();
             if (typeof showToast === "function") showToast("Unfinished draft resumed.", "info");
         });
 
@@ -444,6 +448,7 @@
                 SERVER_DRAFT_ID = null;
             }
             document.getElementById("recoveryBanner").style.display = "none";
+            resetReviewForm();
             if (typeof showToast === "function") showToast("Draft discarded.", "info");
         });
 
@@ -670,7 +675,6 @@
                 if (typeof showToast === "function") showToast("Date of Joining defaulted to today. Adjust if needed.", "info");
             }
 
-            var aadhaarInput = document.getElementById("rfAadhaar");
             var fullAadhaar = data.aadhaar_number || "";
             aadhaarInput.value = fullAadhaar || "";
             var aadhaarBadge = document.getElementById("cfAadhaar");
@@ -1173,11 +1177,46 @@
         document.getElementById("btnSessionReset").addEventListener("click", sessionReset);
 
         /* ── Back / Cancel ──────────────────────────────────────────────── */
+        var REVIEW_FIELD_IDS = ["rfName", "rfMobile", "rfDob", "rfFacility",
+            "rfRole", "rfSalary", "rfDoj", "rfFatherName", "rfPinCode",
+            "rfCostCode", "rfFacilityType", "rfAadhaar", "rfAddress"];
+        function resetReviewForm() {
+            for (var i = 0; i < REVIEW_FIELD_IDS.length; i++) {
+                var el = document.getElementById(REVIEW_FIELD_IDS[i]);
+                if (el) {
+                    el.value = "";
+                    ["data-facility-ref", "data-location", "data-cost-code",
+                     "data-entity", "data-operation", "data-duplicate",
+                     "data-role-picked"].forEach(function (attr) {
+                        el.removeAttribute(attr);
+                    });
+                }
+            }
+            var gen = document.getElementById("rfGender");
+            if (gen) gen.value = "";
+            var badges = document.querySelectorAll(".cf-badge");
+            for (var b = 0; b < badges.length; b++) badges[b].textContent = "";
+            var srcs = document.querySelectorAll(".rf-source");
+            for (var s = 0; s < srcs.length; s++) srcs[s].textContent = "";
+            var lBadge = document.getElementById("rfLocationBadge");
+            if (lBadge) lBadge.style.display = "none";
+            var details = document.querySelectorAll(".evidence-details");
+            for (var q = 0; q < details.length; q++) { details[q].style.display = "none"; details[q].innerHTML = ""; }
+            var evToggles = document.querySelectorAll(".evidence-toggle");
+            for (var t = 0; t < evToggles.length; t++) {
+                var tg = evToggles[t];
+                if (tg && tg.id && tg.id.indexOf("ev") === 0) tg.style.display = "none";
+            }
+            hideFacilityDrop();
+            hideRoleDrop();
+            clearAadhaarHint();
+        }
         function backToUpload() {
             reviewSection.style.display = "none";
             uploadSection.style.display = "";
             extractionData = null;
             currentSessionId = null;
+            resetReviewForm();
         }
         document.getElementById("btnBackToUpload").addEventListener("click", backToUpload);
         document.getElementById("btnCancelReview").addEventListener("click", backToUpload);

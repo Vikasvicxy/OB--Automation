@@ -377,8 +377,16 @@ def score_name_candidates(lines: list[OCRLine]) -> FieldResult:
 # ── DOB candidate scoring ────────────────────────────────────────────────────
 
 
+_DOB_ISSUE_TOKENS = ("issue", "issued", "enrol", "enroll", "update", "signature")
+
+
 def score_dob_candidates(lines: list[OCRLine]) -> FieldResult:
-    """Score DOB candidates from OCR lines."""
+    """Score DOB candidates from OCR lines.
+
+    Explicit DOB / Date of Birth labels are strongly preferred; dates on
+    issue/enrolment/update/signature lines are rejected so an Aadhaar issue date
+    ("14/10/2013") is NEVER reported as the candidate's DOB.
+    """
     result = FieldResult(field="dob")
     if not lines:
         return result
@@ -390,6 +398,9 @@ def score_dob_candidates(lines: list[OCRLine]) -> FieldResult:
         text = line.text.strip()
         if not text:
             continue
+        low = text.lower()
+        if any(tok in low for tok in _DOB_ISSUE_TOKENS):
+            continue
 
         # DD/MM/YYYY or DD-MM-YYYY pattern
         m = re.search(r"(\d{2})[/\-](\d{2})[/\-](\d{4})", text)
@@ -399,10 +410,12 @@ def score_dob_candidates(lines: list[OCRLine]) -> FieldResult:
             reasons = ["Date pattern DD/MM/YYYY found"]
 
             # Near DOB label
-            low = text.lower()
             if "dob" in low or "date of birth" in low:
-                score += 15
+                score += 20
                 reasons.append("DOB label present")
+            if "birth" in low:
+                score += 10
+                reasons.append("Birth-related label present")
 
             if line.confidence >= 0.8:
                 score += 5
@@ -472,7 +485,18 @@ _ADDRESS_TERMINATORS = {
     "virtual id", "dob", "date of birth", "year of birth", "gender",
     "male", "female", "enrolment", "enrollment", "signature",
     "i humbly declare", "i hereby declare",
+    "issue", "issued", "issued date", "update", "updated",
 }
+
+# Contact/identity line prefixes (e.g. "Mobile: 9398969253") that belong to a
+# screen footer, never the postal address.
+_ADDRESS_TRAILING_CONTACT = re.compile(r"(mobile|mob|phone|tel|whatsapp|whatapp)"
+                                       r"[\s:.\-]*(?:91[-\s]?)?\d{5,}", re.IGNORECASE)
+
+# A line that is ENTIRELY the Aadhaar number (4-4-4) or ENTIRELY a standalone
+# date/issue-date. These always terminate the postal address block.
+_ADDRESS_ENDING_NUMERIC = re.compile(
+    r"^\s*(\d{4}[\s]?\d{4}[\s]?\d{4}|\d{2}[/\-]\d{2}[/\-]\d{4})\s*$")
 
 
 def _line_has_anchor(text: str) -> bool:
@@ -553,6 +577,8 @@ def score_address_candidates(lines: list[OCRLine]) -> FieldResult:
             # Stop at terminators
             if any(t in low for t in _ADDRESS_TERMINATORS):
                 break
+            if _ADDRESS_ENDING_NUMERIC.match(line.text.strip()):
+                break
             if not line.text.strip():
                 if block_lines:
                     break
@@ -615,7 +641,12 @@ def score_address_candidates(lines: list[OCRLine]) -> FieldResult:
             ))
             continue
 
-        # Build address text
+        # Build address text (dropping trailing contact/mobile footer lines)
+        block_lines = block_lines[:]
+        while block_lines and _ADDRESS_TRAILING_CONTACT.search(block_lines[-1].text):
+            block_lines.pop()
+        if not block_lines:
+            continue
         addr_text = " ".join(l.text.strip() for l in block_lines)
         box_refs = [(l.x1, l.y1, l.x2, l.y2) for l in block_lines]
 
