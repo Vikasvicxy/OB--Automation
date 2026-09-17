@@ -1841,6 +1841,7 @@ async def smart_upload_page(request: Request):
             "rules": rules.get_rules_for_frontend(),
             "rules_json": rules_json,
             "recruiter_name": generation.get_default_recruiter_name(),
+            "nav_active": "smart_upload",
         },
     )
 

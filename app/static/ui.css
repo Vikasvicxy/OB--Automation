@@ -529,3 +529,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, [tabindex]:focus-vis
 
 /* ── Review workspace responsive stacking ─────────────────── */
 @media(max-width:1100px){.review-col-left{margin-bottom:12px}.review-col-right{margin-top:12px}}
+
+/* ── Sidebar light polish: active nav item (accent left edge) ─ */
+.nav-item { position: relative; }
+.nav-item.active {
+    background: rgba(59, 130, 246, 0.18);
+    box-shadow: inset 3px 0 0 var(--accent-blue);
+}

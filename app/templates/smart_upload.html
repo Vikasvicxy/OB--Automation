@@ -7,19 +7,6 @@
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/ui.css">
     <link rel="stylesheet" href="/static/smart_upload.css">
-    <style>
-        .recovery-banner { display:flex; align-items:center; gap:12px; background:#fffbeb; border:1px solid #fde68a; border-radius:var(--radius); padding:12px 20px; margin-bottom:20px; }
-        .recovery-icon { font-size:1.2rem; color:var(--accent-amber); }
-        .recovery-text { font-weight:500; font-size:0.9rem; flex:1; }
-        .hub-drop { position:relative; z-index:5; overflow:auto; max-height:220px; background:#fff; border:1px solid var(--border); border-radius:var(--radius-sm); box-shadow:0 6px 18px rgba(0,0,0,0.12); margin-top:4px; }
-        .hub-drop .hub-opt { display:block; width:100%; text-align:left; padding:8px 12px; border:0; background:none; cursor:pointer; font-size:0.85rem; }
-        .hub-drop .hub-opt:hover, .hub-drop .hub-opt:focus { background:#f1f5f9; outline:none; }
-        .hub-drop .hub-opt .hub-main { font-weight:600; }
-        .hub-drop .hub-opt .hub-sub { color:var(--text-secondary); font-size:0.75rem; margin-top:2px; word-break:break-all; }
-        .hub-drop .hub-empty { padding:10px 12px; color:var(--text-secondary); font-size:0.82rem; }
-        .session-bar { display:flex; align-items:center; gap:12px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:var(--radius); padding:12px 18px; margin-top:20px; }
-        .session-bar .session-count { font-weight:700; color:#1d4ed8; }
-    </style>
 </head>
 <body>
     {% include 'partials/_sidebar.html' %}
@@ -29,31 +16,37 @@
         <header class="topbar">
             <div>
                 <h1 class="page-title">New Onboarding</h1>
-                <p class="page-subtitle">Paste (Ctrl+V), upload or drag screenshots / Aadhaar / PDF &mdash; review, approve, then generate the Onboarding workbook</p>
+                <p class="page-subtitle">Paste (Ctrl+V), drop or upload candidate documents &mdash; review, approve, then generate the Onboarding workbook</p>
             </div>
         </header>
 
-        <!-- ── Recovery Draft Banner ─────────────────────────────────────── -->
-        <div id="recoveryBanner" class="recovery-banner" style="display:none;margin-bottom:16px;">
-            <span class="recovery-icon" aria-hidden="true">&#9888;</span>
-            <span class="recovery-text">Unfinished candidate draft found. Would you like to resume it?</span>
-            <button type="button" class="btn btn-secondary btn-sm" id="btnRecover">Resume</button>
-            <button type="button" class="btn btn-outline btn-sm" id="btnDiscard">Discard</button>
+        <!-- ── Draft Available Banner ────────────────────────────────────── -->
+        <div id="recoveryBanner" class="recovery-banner" style="display:none;">
+            <span class="recovery-icon" aria-hidden="true">&#9881;</span>
+            <div class="recovery-text">
+                <strong>Draft available</strong>
+                <p>You have an unfinished candidate. Resume it to continue where you left off.</p>
+            </div>
+            <div class="recovery-actions">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnRecover">Resume</button>
+                <button type="button" class="btn btn-outline btn-sm" id="btnDiscard">Discard</button>
+            </div>
         </div>
 
         <!-- ── Upload Zone ────────────────────────────────────────────────── -->
         <section id="uploadSection">
             <div class="smart-upload-zone" id="uploadZone" role="button" tabindex="0" aria-label="Upload documents">
                 <div class="smart-upload-icon">&#8682;</div>
-                <h2>Paste (Ctrl+V), drop files here or click to browse</h2>
-                <p class="smart-upload-supported">Accepts .png, .jpg, .jpeg, .pdf &mdash; up to one candidate's documents at a time</p>
+                <h2>Paste (Ctrl+V), drop or upload candidate documents</h2>
+                <p class="smart-upload-supported">Supported: PNG, JPG, PDF &mdash; one candidate&rsquo;s documents at a time</p>
                 <input type="file" id="fileInput" multiple accept=".png,.jpg,.jpeg,.pdf" style="display:none">
             </div>
 
             <div id="fileListSection" class="uploaded-section" style="display:none">
                 <div class="uploaded-files-header">
-                    <h3>Selected files <span id="fileCount"></span></h3>
+                    <h3><span id="fileCount">0</span> file(s) selected</h3>
                     <div class="uploaded-files-actions">
+                        <button type="button" class="evidence-toggle" id="btnAddMore">+ Add more</button>
                         <button type="button" class="evidence-toggle" id="btnClearFiles">Clear all</button>
                     </div>
                 </div>
@@ -78,10 +71,10 @@
         <section id="reviewSection" style="display:none">
             <div class="smart-review-header">
                 <div>
-                    <h2 class="review-title">Review Extracted Fields</h2>
-                    <p class="review-subtitle">Edit any field below, then save as draft</p>
+                    <h2 class="review-title">Review Candidate</h2>
+                    <p class="review-subtitle">Check extracted details below. Correct anything that looks wrong, then save or approve.</p>
                 </div>
-                <button type="button" class="evidence-toggle" id="btnBackToUpload">&#8592; New upload</button>
+                <button type="button" class="btn btn-outline btn-sm" id="btnBackToUpload">&#43; New Upload</button>
             </div>
 
             <div id="fallbackBanner" class="fallback-banner" style="display:none">
@@ -102,185 +95,265 @@
                 <div class="src-files-list" id="srcFilesList"></div>
             </div>
 
-            <div class="review-form-grid" id="reviewForm">
-                <!-- Name -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfName">Name</label>
-                    <input type="text" id="rfName" class="global-search" style="width:100%">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfName"></span>
-                        <span class="rf-source" id="srcName"></span>
-                        <button type="button" class="evidence-toggle" id="evName" style="display:none">Why?</button>
+            <div id="reviewForm">
+                <!-- ── A. Candidate Identity ─────────────────────────────────── -->
+                <div class="review-card">
+                    <div class="review-card-head">
+                        <span class="review-card-mark">A</span>
+                        <div>
+                            <h3>Candidate Identity</h3>
+                            <p>Personal details extracted from the uploaded documents.</p>
+                        </div>
                     </div>
-                    <div class="evidence-details" id="evNameDetail" style="display:none"></div>
-                </div>
+                    <div class="review-form-grid">
+                        <!-- Name -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfName">Name <span class="req">*</span></label>
+                            <input type="text" id="rfName" class="rf-control" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfName"></span>
+                                <span class="rf-source" id="srcName"></span>
+                                <button type="button" class="evidence-toggle" id="evName" style="display:none">Why?</button>
+                            </div>
+                            <div class="field-error" id="nameError"></div>
+                            <div class="evidence-details" id="evNameDetail" style="display:none"></div>
+                        </div>
 
-                <!-- Mobile -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfMobile">Mobile</label>
-                    <input type="text" id="rfMobile" class="global-search" style="width:100%">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfMobile"></span>
-                        <span class="rf-source" id="srcMobile"></span>
-                        <button type="button" class="evidence-toggle" id="evMobile" style="display:none">Why?</button>
-                    </div>
-                    <div class="evidence-details" id="evMobileDetail" style="display:none"></div>
-                </div>
+                        <!-- Mobile -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfMobile">Mobile <span class="req">*</span></label>
+                            <input type="text" id="rfMobile" class="rf-control" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfMobile"></span>
+                                <span class="rf-source" id="srcMobile"></span>
+                                <button type="button" class="evidence-toggle" id="evMobile" style="display:none">Why?</button>
+                            </div>
+                            <div class="field-error" id="mobileError"></div>
+                            <div class="evidence-details" id="evMobileDetail" style="display:none"></div>
+                        </div>
 
-                <!-- DOB -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfDob">Date of Birth</label>
-                    <input type="text" id="rfDob" class="global-search" style="width:100%" placeholder="DD/MM/YYYY">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfDob"></span>
-                        <span class="rf-source" id="srcDob"></span>
-                        <button type="button" class="evidence-toggle" id="evDob" style="display:none">Why?</button>
-                    </div>
-                    <div class="evidence-details" id="evDobDetail" style="display:none"></div>
-                </div>
+                        <!-- Date of Birth -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfDob">Date of Birth</label>
+                            <input type="text" id="rfDob" class="rf-control" placeholder="DD/MM/YYYY" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfDob"></span>
+                                <span class="rf-source" id="srcDob"></span>
+                                <button type="button" class="evidence-toggle" id="evDob" style="display:none">Why?</button>
+                            </div>
+                            <div class="evidence-details" id="evDobDetail" style="display:none"></div>
+                        </div>
 
-                <!-- Facility (typeahead from master rows) -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfFacility">Facility / Hub</label>
-                    <input type="text" id="rfFacility" class="global-search" autocomplete="off" style="width:100%;position:relative;z-index:3;" placeholder="Start typing a hub name">
-                    <div class="rf-meta">
-                        <span class="badge-readonly" id="rfLocationBadge" style="display:none;"></span>
-                        <span class="cf-badge" id="cfFacility"></span>
-                        <span class="rf-source" id="srcFacility"></span>
-                        <button type="button" class="evidence-toggle" id="evFacility" style="display:none">Why?</button>
-                    </div>
-                    <div id="rfFacilityDrop" class="hub-drop" style="display:none;"></div>
-                    <div class="evidence-details" id="evFacilityDetail" style="display:none"></div>
-                </div>
+                        <!-- Gender -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfGender">Gender</label>
+                            <select id="rfGender" class="rf-control">
+                                <option value=""></option>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                                <option value="Transgender">Transgender</option>
+                            </select>
+                            <div class="rf-meta">
+                                <span class="text-small">From Aadhaar only</span>
+                            </div>
+                        </div>
 
-                <!-- Role / Designation -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfRole">Role / Designation</label>
-                    <input type="text" id="rfRole" class="global-search" style="width:100%" placeholder="Search / select an official role" autocomplete="off">
-                    <div id="rfRoleDrop" class="hub-drop" style="display:none;"></div>
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfRole"></span>
-                        <span class="rf-source" id="srcRole"></span>
-                        <button type="button" class="evidence-toggle" id="evRole" style="display:none">Why?</button>
-                    </div>
-                    <div class="evidence-details" id="evRoleDetail" style="display:none"></div>
-                </div>
+                        <!-- Father's Name -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfFatherName">Father&rsquo;s Name</label>
+                            <input type="text" id="rfFatherName" class="rf-control" placeholder="S/O, D/O or C/O" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="text-small">Optional</span>
+                            </div>
+                        </div>
 
-                <!-- Salary -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfSalary">Salary</label>
-                    <input type="text" id="rfSalary" class="global-search" style="width:100%" placeholder="e.g. 15000">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfSalary"></span>
-                        <span class="rf-source" id="srcSalary"></span>
-                        <button type="button" class="evidence-toggle" id="evSalary" style="display:none">Why?</button>
-                    </div>
-                    <div class="evidence-details" id="evSalaryDetail" style="display:none"></div>
-                </div>
+                        <!-- Pin Code -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfPinCode">PIN Code</label>
+                            <input type="text" id="rfPinCode" class="rf-control" placeholder="6-digit PIN" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfPinCode"></span>
+                                <span class="rf-source" id="srcPinCode"></span>
+                                <button type="button" class="evidence-toggle" id="evPinCode" style="display:none">Why?</button>
+                            </div>
+                            <div class="evidence-details" id="evPinCodeDetail" style="display:none"></div>
+                        </div>
 
-                <!-- Date of Joining -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfDoj">Date of Joining</label>
-                    <input type="text" id="rfDoj" class="global-search" style="width:100%" placeholder="DD/MM/YYYY">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfDoj"></span>
-                        <span class="rf-source" id="srcDoj"></span>
-                        <button type="button" class="evidence-toggle" id="evDoj" style="display:none">Why?</button>
-                    </div>
-                    <div class="evidence-details" id="evDojDetail" style="display:none"></div>
-                </div>
+                        <!-- Aadhaar -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfAadhaar">Aadhaar</label>
+                            <input type="text" id="rfAadhaar" class="rf-control" placeholder="12-digit Aadhaar number" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfAadhaar"></span>
+                                <span class="rf-source" id="srcAadhaar"></span>
+                                <button type="button" class="evidence-toggle" id="evAadhaar" style="display:none">Why?</button>
+                            </div>
+                            <div class="field-error" id="aadhaarError"></div>
+                            <div class="evidence-details" id="evAadhaarDetail" style="display:none"></div>
+                        </div>
 
-                <!-- Gender -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfGender">Gender</label>
-                    <select id="rfGender" class="global-search" style="width:100%">
-                        <option value=""></option>
-                        <option value="Male">Male</option>
-                        <option value="Female">Female</option>
-                        <option value="Transgender">Transgender</option>
-                    </select>
-                    <div class="rf-meta">
-                        <span class="text-small">From Aadhaar only</span>
-                    </div>
-                </div>
-
-                <!-- Father Name -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfFatherName">Father&rsquo;s Name</label>
-                    <input type="text" id="rfFatherName" class="global-search" style="width:100%" placeholder="S/O, D/O or C/O" >
-                    <div class="rf-meta">
-                        <span class="badge-readonly">Optional</span>
-                    </div>
-                </div>
-
-                <!-- Pin Code -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfPinCode">Pin Code</label>
-                    <input type="text" id="rfPinCode" class="global-search" style="width:100%" placeholder="6-digit PIN">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfPinCode"></span>
-                        <span class="rf-source" id="srcPinCode"></span>
-                        <button type="button" class="evidence-toggle" id="evPinCode" style="display:none">Why?</button>
-                    </div>
-                    <div class="evidence-details" id="evPinCodeDetail" style="display:none"></div>
-                </div>
-
-                <!-- Cost Code -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfCostCode">Cost Code</label>
-                    <input type="text" id="rfCostCode" class="global-search" style="width:100%">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfCostCode"></span>
-                        <span class="rf-source" id="srcCostCode"></span>
+                        <!-- Address (full-width) -->
+                        <div class="rf-field rf-field-wide">
+                            <label class="rf-label" for="rfAddress">Address</label>
+                            <input type="text" id="rfAddress" class="rf-control" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfAddress"></span>
+                                <span class="rf-source" id="srcAddress"></span>
+                                <button type="button" class="evidence-toggle" id="evAddress" style="display:none">Why?</button>
+                            </div>
+                            <div class="evidence-details" id="evAddressDetail" style="display:none"></div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Facility Type -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfFacilityType">Facility Type</label>
-                    <input type="text" id="rfFacilityType" class="global-search" style="width:100%">
+                <!-- ── B. Job Details ──────────────────────────────────────── -->
+                <div class="review-card">
+                    <div class="review-card-head">
+                        <span class="review-card-mark">B</span>
+                        <div>
+                            <h3>Job Details</h3>
+                            <p>Assignment, hub and pay information.</p>
+                        </div>
+                    </div>
+                    <div class="review-form-grid">
+                        <!-- Facility / Hub (typeahead from master rows) -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfFacility">Facility / Hub <span class="req">*</span></label>
+                            <div class="rf-input-wrap">
+                                <input type="text" id="rfFacility" class="rf-control" autocomplete="off" placeholder="Start typing a hub name">
+                                <div id="rfFacilityDrop" class="hub-drop" style="display:none;"></div>
+                            </div>
+                            <div class="rf-meta">
+                                <span class="badge-readonly" id="rfLocationBadge" style="display:none;"></span>
+                                <span class="cf-badge" id="cfFacility"></span>
+                                <span class="rf-source" id="srcFacility"></span>
+                                <button type="button" class="evidence-toggle" id="evFacility" style="display:none">Why?</button>
+                            </div>
+                            <div class="field-error" id="facilityError"></div>
+                            <div class="evidence-details" id="evFacilityDetail" style="display:none"></div>
+                        </div>
+
+                        <!-- Role / Designation -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfRole">Role / Designation <span class="req">*</span></label>
+                            <div class="rf-input-wrap">
+                                <input type="text" id="rfRole" class="rf-control" placeholder="Search / select an official role" autocomplete="off">
+                                <div id="rfRoleDrop" class="hub-drop" style="display:none;"></div>
+                            </div>
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfRole"></span>
+                                <span class="rf-source" id="srcRole"></span>
+                                <button type="button" class="evidence-toggle" id="evRole" style="display:none">Why?</button>
+                            </div>
+                            <div class="field-error" id="roleError"></div>
+                            <div class="evidence-details" id="evRoleDetail" style="display:none"></div>
+                        </div>
+
+                        <!-- Salary -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfSalary">Salary <span class="req">*</span></label>
+                            <input type="text" id="rfSalary" class="rf-control" placeholder="e.g. 15000" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfSalary"></span>
+                                <span class="rf-source" id="srcSalary"></span>
+                                <button type="button" class="evidence-toggle" id="evSalary" style="display:none">Why?</button>
+                            </div>
+                            <div class="field-error" id="salaryError"></div>
+                            <div class="evidence-details" id="evSalaryDetail" style="display:none"></div>
+                        </div>
+
+                        <!-- Date of Joining -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfDoj">Date of Joining</label>
+                            <input type="text" id="rfDoj" class="rf-control" placeholder="DD/MM/YYYY" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfDoj"></span>
+                                <span class="rf-source" id="srcDoj"></span>
+                                <button type="button" class="evidence-toggle" id="evDoj" style="display:none">Why?</button>
+                            </div>
+                            <div class="evidence-details" id="evDojDetail" style="display:none"></div>
+                        </div>
+
+                        <!-- Derived: Location (read-only, auto-filled from Facility) -->
+                        <div class="rf-field rf-field-wide rf-field-location">
+                            <label class="rf-label" for="rfLocationDisp">Location</label>
+                            <div class="rf-location-row">
+                                <input type="text" id="rfLocationDisp" class="rf-control rf-control-readonly" readonly placeholder="Select a facility to auto-fill" tabindex="-1">
+                                <span class="field-helper">Auto-filled from Facility</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Aadhaar -->
-                <div class="rf-field">
-                    <label class="rf-label" for="rfAadhaar">Aadhaar</label>
-                    <input type="text" id="rfAadhaar" class="global-search" style="width:100%" placeholder="12-digit Aadhaar number" autocomplete="off">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfAadhaar"></span>
-                        <span class="rf-source" id="srcAadhaar"></span>
-                        <button type="button" class="evidence-toggle" id="evAadhaar" style="display:none">Why?</button>
+                <!-- ── C. Derived Details ───────────────────────────────────── -->
+                <div class="review-card review-card-secondary">
+                    <div class="review-card-head">
+                        <span class="review-card-mark">C</span>
+                        <div>
+                            <h3>Derived Details</h3>
+                            <p>Derived from the selected cost code &mdash; review only if something looks off.</p>
+                        </div>
                     </div>
-                    <div class="field-error" id="aadhaarError" style="display:none;color:var(--accent-red);font-size:0.78rem;margin-top:4px;"></div>
-                    <div class="evidence-details" id="evAadhaarDetail" style="display:none"></div>
-                </div>
+                    <div class="review-form-grid review-grid-narrow">
+                        <!-- Cost Code -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfCostCode">Cost Code</label>
+                            <input type="text" id="rfCostCode" class="rf-control" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="cf-badge" id="cfCostCode"></span>
+                                <span class="rf-source" id="srcCostCode"></span>
+                            </div>
+                            <div class="field-error" id="costCodeError"></div>
+                        </div>
 
-                <!-- Address (full-width) -->
-                <div class="rf-field rf-field-wide">
-                    <label class="rf-label" for="rfAddress">Address</label>
-                    <input type="text" id="rfAddress" class="global-search" style="width:100%">
-                    <div class="rf-meta">
-                        <span class="cf-badge" id="cfAddress"></span>
-                        <span class="rf-source" id="srcAddress"></span>
-                        <button type="button" class="evidence-toggle" id="evAddress" style="display:none">Why?</button>
+                        <!-- Facility Type -->
+                        <div class="rf-field">
+                            <label class="rf-label" for="rfFacilityType">Facility Type</label>
+                            <input type="text" id="rfFacilityType" class="rf-control" autocomplete="off">
+                            <div class="rf-meta">
+                                <span class="field-note">Auto from cost code</span>
+                            </div>
+                            <div class="field-error" id="facilityTypeError"></div>
+                        </div>
                     </div>
-                    <div class="evidence-details" id="evAddressDetail" style="display:none"></div>
                 </div>
             </div>
 
-            <div class="rf-actions">
-                <button type="button" class="evidence-toggle" id="btnCancelReview">Cancel</button>
-                <div class="rf-actions-spacer"></div>
-                <button type="button" class="btn btn-secondary" id="btnSaveDraft">Save Draft</button>
+            <!-- Sticky bottom action bar -->
+            <div class="rf-actions smart-sticky-bar" id="stickyActionBar">
+                <span class="draft-status" id="draftStatus"><span class="draft-status-dot"></span>Not saved yet</span>
+                <span class="rf-actions-spacer"></span>
+                <button type="button" class="btn btn-ghost" id="btnCancelReview">Cancel</button>
+                <button type="button" class="btn btn-outline" id="btnSaveDraft">Save Draft</button>
                 <button type="button" class="btn btn-primary" id="btnApprove">Save &amp; Approve</button>
             </div>
-
-            <div class="session-bar" id="sessionBar" style="display:none;">
-                <span>The <span class="session-count" id="sessionCount">0</span> candidate(s) approved in this session are saved.</span>
-                <span class="rf-actions-spacer" style="flex:1;"></span>
-                <button type="button" class="btn btn-primary btn-sm" id="btnSessionGenerate">Generate Excel (<span id="sessionGenCount">0</span>)</button>
-                <button type="button" class="btn btn-sm btn-outline" id="btnSessionReset">New Session</button>
-            </div>
         </section>
+
+        <!-- ── Multi-candidate session summary (persists across screens) ──── -->
+        <div class="session-bar" id="sessionBar" style="display:none;">
+            <div class="session-summary">
+                <span class="summary-pill summary-ready"><b id="sessionCount">0</b> Ready</span>
+                <span class="summary-pill summary-review"><b id="sessionReviewCount">0</b> Needs Review</span>
+            </div>
+            <span class="session-hint">Ready &amp; needs-review candidates in this batch</span>
+            <span class="rf-actions-spacer" style="flex:1;"></span>
+            <button type="button" class="btn btn-outline btn-sm" id="btnSessionReset">New Session</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnSessionGenerate">Generate Excel (<span id="sessionGenCount">0</span>)</button>
+        </div>
+
+        <!-- Generate Excel success card (persists across screens) -->
+        <div id="genSuccessCard" class="gen-success-card" style="display:none;">
+            <div class="gen-success-ic" aria-hidden="true">&#9989;</div>
+            <div class="gen-success-body">
+                <h3>Onboarding workbook generated</h3>
+                <p class="gen-success-file" id="genSuccessFile"></p>
+                <p class="gen-success-count" id="genSuccessCount"></p>
+            </div>
+            <div class="gen-success-actions">
+                <button type="button" class="btn btn-primary btn-sm" id="btnGenDownload">Download Excel</button>
+                <button type="button" class="btn btn-outline btn-sm" id="btnGenOpenFolder">Open Folder</button>
+            </div>
+        </div>
     </main>
 
     {% include 'partials/_toast.html' %}
@@ -360,7 +433,12 @@
                     safe_payload: safe
                 })
             }).then(function (r) { return r.json(); })
-              .then(function (res) { if (res && res.draft_id) SERVER_DRAFT_ID = res.draft_id; })
+              .then(function (res) {
+                  if (res && res.draft_id) {
+                      SERVER_DRAFT_ID = res.draft_id;
+                      if (typeof setDraftStatus === "function") setDraftStatus("Draft saved", true);
+                  }
+              })
               .catch(function () { /* non-fatal */ });
         }
 
@@ -523,11 +601,13 @@
             if (!files.length) {
                 fileListSection.style.display = "none";
                 uploadActions.style.display = "none";
+                uploadZone.style.display = "";
                 return;
             }
             fileListSection.style.display = "";
             uploadActions.style.display = "";
-            fileCount.textContent = "(" + files.length + ")";
+            uploadZone.style.display = "none";
+            fileCount.textContent = String(files.length);
             fileGrid.innerHTML = "";
             for (var i = 0; i < files.length; i++) {
                 (function(idx) {
@@ -580,6 +660,11 @@
         btnClear.addEventListener("click", function() {
             files = [];
             renderFileGrid();
+        });
+
+        var btnAddMore = document.getElementById("btnAddMore");
+        if (btnAddMore) btnAddMore.addEventListener("click", function() {
+            fileInput.click();
         });
 
         /* ── Extract button ─────────────────────────────────────────────── */
@@ -817,6 +902,7 @@
         function showLocationBadge() {
             var fac = document.getElementById("rfFacility");
             var badge = document.getElementById("rfLocationBadge");
+            var locDisp = document.getElementById("rfLocationDisp");
             if (!fac || !badge) return;
             var loc = fac.getAttribute("data-location") || "";
             var cc = fac.getAttribute("data-cost-code") || "";
@@ -828,6 +914,7 @@
             } else {
                 badge.style.display = "none";
             }
+            if (locDisp) locDisp.value = loc;
         }
 
         function pickFacilityRow(h, input) {
@@ -882,7 +969,7 @@
                             if (!rows.length) {
                                 var empty = document.createElement("div");
                                 empty.className = "hub-empty";
-                                empty.textContent = "No matching hub. Type the Facility / Hub name exactly.";
+                                empty.textContent = "No matching facility found. Check the name or search by location.";
                                 drop.appendChild(empty);
                             } else {
                                 rows.forEach(function (h, idx) {
@@ -891,11 +978,18 @@
                                     btn.className = "hub-opt";
                                     var dup = rows.filter(function (r2) { return r2.facility_name === h.facility_name; }).length > 1;
                                     var d = h.facility_ref || "";
+                                    if (facilityInput.value.trim() &&
+                                        facilityInput.value.trim().toLowerCase() === (h.facility_name || "").toLowerCase()) {
+                                        btn.className = "hub-opt selected";
+                                    }
+                                    var subParts = [];
+                                    if (h.location) subParts.push(h.location);
+                                    if (h.operation) subParts.push(h.operation);
+                                    if (d) subParts.push(d);
+                                    if (dup) subParts.push("duplicate name — choose by location");
                                     btn.innerHTML = '<span class="hub-main">' +
                                         escapeHtml(h.facility_name) + "</span>" +
-                                        '<span class="hub-sub">' + escapeHtml(h.location || "") +
-                                        (d && h.location ? " · " : "") + escapeHtml(d) +
-                                        (dup ? " · duplicate name — choose by location" : "") + "</span>";
+                                        '<span class="hub-sub">' + escapeHtml(subParts.join(" · ")) + "</span>";
                                     btn.setAttribute("data-i", String(idx));
                                     btn.addEventListener("mousedown", function (ev) {
                                         ev.preventDefault();
@@ -980,7 +1074,7 @@
             var src = document.getElementById("srcRole");
             if (badge) {
                 badge.textContent = opts.auto ? "AUTO" : "OFFICIAL";
-                badge.className = "cf-badge " + (opts.auto ? "cf-review" : "cf-high");
+                badge.className = "cf-badge " + (opts.auto ? "cf-auto" : "cf-high");
             }
             if (src) { src.textContent = opts.source || "Official role"; }
         }
@@ -1002,7 +1096,7 @@
             if (!shown.length) {
                 var empty = document.createElement("div");
                 empty.className = "hub-empty";
-                empty.textContent = cc ? ("No official role matches within " + cc + ".") : "No roles found.";
+                empty.textContent = "No matching role found" + (cc ? " within " + cc + "." : ".");
                 roleDrop.appendChild(empty);
             } else {
                 shown.forEach(function (name, idx) {
@@ -1138,17 +1232,57 @@
             var bar = document.getElementById("sessionBar");
             var total = 0, lastBatch = null;
             for (var k in s) { total += s[k]; lastBatch = parseInt(k, 10); }
-            document.getElementById("sessionCount").textContent = String(total);
-            document.getElementById("sessionGenCount").textContent = String(total);
-            if (total > 0 && bar) {
-                bar.style.display = "";
-                btnSessionGenerate.setAttribute("data-batch", String(lastBatch || 1));
-                btnSessionGenerate.disabled = false;
-            } else if (bar) {
-                bar.style.display = "none";
+            var batchId = lastBatch || 1;
+            function apply(rN, rvN) {
+                document.getElementById("sessionCount").textContent = String(rN);
+                document.getElementById("sessionGenCount").textContent = String(rN);
+                var rvEl = document.getElementById("sessionReviewCount");
+                if (rvEl) rvEl.textContent = String(rvN);
+                if (bar) {
+                    if (rN + rvN > 0) {
+                        bar.style.display = "";
+                        btnSessionGenerate.setAttribute("data-batch", String(batchId));
+                        btnSessionGenerate.disabled = false;
+                    } else {
+                        bar.style.display = "none";
+                    }
+                }
             }
+            apply(total, 0);
+            fetch("/api/candidates")
+                .then(function (r) { return r.json(); })
+                .then(function (list) {
+                    if (!Array.isArray(list)) return;
+                    var ready = 0, rev = 0;
+                    for (var i = 0; i < list.length; i++) {
+                        var c = list[i];
+                        if (Number(c.batch_id) !== batchId) continue;
+                        var st = (c.status || "").toLowerCase();
+                        if (st === "ready") ready++;
+                        else if (st === "needs_review") rev++;
+                    }
+                    if (ready > total || rev > 0) {
+                        apply(Math.max(ready, total), rev);
+                    }
+                })
+                .catch(function () { /* keep session fallback */ });
         }
         var btnSessionGenerate = document.getElementById("btnSessionGenerate");
+        var LAST_GENERATED_ID = null;
+        function showGenSuccessCard(data) {
+            var card = document.getElementById("genSuccessCard");
+            if (!card) { return false; }
+            LAST_GENERATED_ID = data.generated_file_id;
+            var fname = String(data.filename || "").split(/[\\/]/).pop() || "";
+            document.getElementById("genSuccessFile").textContent = fname;
+            var n = data.candidate_count != null ? data.candidate_count : 0;
+            document.getElementById("genSuccessCount").textContent =
+                n + " candidate(s) included in the workbook.";
+            card.style.display = "flex";
+            var ds = document.getElementById("draftStatus");
+            if (ds && typeof setDraftStatus === "function") setDraftStatus("Not saved yet", false);
+            return true;
+        }
         if (btnSessionGenerate) {
             btnSessionGenerate.addEventListener("click", function () {
                 var batchId = parseInt(btnSessionGenerate.getAttribute("data-batch") || "1", 10);
@@ -1161,8 +1295,8 @@
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
                         if (data.success && data.generated_file_id) {
-                            if (typeof showToast === "function") showToast("Onboarding workbook generated. Downloading\u2026", "success");
-                            window.location.href = "/api/generated-file/" + data.generated_file_id + "/download";
+                            showGenSuccessCard(data);
+                            if (typeof showToast === "function") showToast("Onboarding workbook generated. Choose Download Excel to save it.", "success");
                         } else {
                             if (typeof showToast === "function") showToast(data.error || "Generation failed. Open Batch Review for details.", "error");
                             btnSessionGenerate.disabled = false;
@@ -1173,8 +1307,34 @@
                         btnSessionGenerate.disabled = false;
                     });
             });
+            document.getElementById("btnGenDownload").addEventListener("click", function () {
+                if (LAST_GENERATED_ID) window.location.href = "/api/generated-file/" + LAST_GENERATED_ID + "/download";
+            });
+            document.getElementById("btnGenOpenFolder").addEventListener("click", function () {
+                if (!LAST_GENERATED_ID) return;
+                fetch("/api/generated/open-folder", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file_id: LAST_GENERATED_ID })
+                }).then(function (r) { return r.json(); })
+                  .then(function (res) {
+                      if (typeof showToast === "function") {
+                          showToast(res.ok ? "Opened output folder." : (res.error || "Could not open folder."),
+                                    res.ok ? "success" : "error");
+                      }
+                  })
+                  .catch(function () { /* ignore */ });
+            });
         }
         document.getElementById("btnSessionReset").addEventListener("click", sessionReset);
+
+        function setDraftStatus(text, saved) {
+            var ds = document.getElementById("draftStatus");
+            if (!ds) return;
+            var t = text || (saved ? "Draft saved" : "Not saved yet");
+            ds.innerHTML = '<span class="draft-status-dot"></span>' + t;
+            ds.className = "draft-status" + (saved ? " saved" : "");
+        }
 
         /* ── Back / Cancel ──────────────────────────────────────────────── */
         var REVIEW_FIELD_IDS = ["rfName", "rfMobile", "rfDob", "rfFacility",
@@ -1210,7 +1370,59 @@
             hideFacilityDrop();
             hideRoleDrop();
             clearAadhaarHint();
+            clearFieldErrors();
+            var locDisp = document.getElementById("rfLocationDisp");
+            if (locDisp) locDisp.value = "";
+            var gsc = document.getElementById("genSuccessCard");
+            if (gsc) gsc.style.display = "none";
+            setDraftStatus("Not saved yet", false);
         }
+        var ERROR_MAP = {
+            name: ["rfName", "nameError"],
+            mobile: ["rfMobile", "mobileError"],
+            cost_code: ["rfCostCode", "costCodeError"],
+            role: ["rfRole", "roleError"],
+            facility_type: ["rfFacilityType", "facilityTypeError"],
+            facility: ["rfFacility", "facilityError"],
+            salary: ["rfSalary", "salaryError"]
+        };
+        function clearFieldErrors() {
+            Object.keys(ERROR_MAP).forEach(function (k) {
+                var ids = ERROR_MAP[k];
+                var input = document.getElementById(ids[0]);
+                var el = document.getElementById(ids[1]);
+                if (input) input.classList.remove("input-error");
+                if (el) { el.textContent = ""; el.style.display = "none"; }
+            });
+        }
+        function showFieldErrors(errors) {
+            clearFieldErrors();
+            var first = null;
+            Object.keys(ERROR_MAP).forEach(function (k) {
+                if (!errors || !errors[k]) return;
+                var ids = ERROR_MAP[k];
+                var input = document.getElementById(ids[0]);
+                var el = document.getElementById(ids[1]);
+                if (input) input.classList.add("input-error");
+                if (el) { el.textContent = errors[k]; el.style.display = "block"; }
+                if (!first && input) first = input;
+            });
+            if (first) {
+                first.scrollIntoView({ behavior: "smooth", block: "center" });
+                first.focus({ preventScroll: true });
+            }
+        }
+        Object.keys(ERROR_MAP).forEach(function (k) {
+            var ids = ERROR_MAP[k];
+            var input = document.getElementById(ids[0]);
+            if (!input) return;
+            input.addEventListener("input", function () {
+                input.classList.remove("input-error");
+                var el = document.getElementById(ids[1]);
+                if (el) { el.textContent = ""; el.style.display = "none"; }
+            });
+        });
+
         function backToUpload() {
             reviewSection.style.display = "none";
             uploadSection.style.display = "";
@@ -1318,7 +1530,8 @@
                 btn.textContent = "Save & Approve";
                 if (res.errors) {
                     var msg = Object.values(res.errors).join(" | ");
-                    if (typeof showToast === "function") showToast(msg || "Approval failed. Check the required fields.", "error");
+                    showFieldErrors(res.errors);
+                    if (typeof showToast === "function") showToast(msg || "Approval failed. Check the highlighted fields.", "error");
                     return;
                 }
                 if (typeof showToast === "function") {
