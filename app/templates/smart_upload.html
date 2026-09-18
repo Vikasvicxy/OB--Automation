@@ -206,6 +206,52 @@
                     </div>
                 </div>
 
+                <!-- ── Copy-ready Personal Details ─────────────────────────────
+                     Compact, copy-friendly block of the six personal fields used
+                     in the Excel registers. Copies to the clipboard as tab-
+                     separated values ("Copy Details") or with a header row
+                     ("Copy With Headers") straight from the reviewed values.  -->
+                <div class="review-card copy-details-card" id="copyDetailsCard" style="display:none;">
+                    <div class="review-card-head">
+                        <span class="review-card-mark">&#128203;</span>
+                        <div>
+                            <h3>Copy Details</h3>
+                            <p>Copy these personal details straight into Excel &mdash; each value is one column, tab-separated.</p>
+                        </div>
+                        <div class="copy-actions">
+                            <button type="button" class="btn btn-outline btn-sm" id="btnCopyHeaders">Copy With Headers</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="btnCopyDetails">Copy Details</button>
+                        </div>
+                    </div>
+                    <div class="copy-grid">
+                        <div class="copy-field">
+                            <div class="copy-label">Aadhar No</div>
+                            <div class="copy-value" id="cpAadhar"></div>
+                        </div>
+                        <div class="copy-field">
+                            <div class="copy-label">DOB</div>
+                            <div class="copy-value" id="cpDob"></div>
+                        </div>
+                        <div class="copy-field">
+                            <div class="copy-label">Fathers Name</div>
+                            <div class="copy-value" id="cpFather"></div>
+                        </div>
+                        <div class="copy-field">
+                            <div class="copy-label">Pin Code</div>
+                            <div class="copy-value" id="cpPin"></div>
+                        </div>
+                        <div class="copy-field">
+                            <div class="copy-label">Gender</div>
+                            <div class="copy-value" id="cpGender"></div>
+                        </div>
+                        <div class="copy-field copy-field-wide">
+                            <div class="copy-label">Address</div>
+                            <div class="copy-value" id="cpAddress"></div>
+                        </div>
+                    </div>
+                    <div class="copy-note" id="copyNote" style="display:none;"></div>
+                </div>
+
                 <!-- ── B. Job Details ──────────────────────────────────────── -->
                 <div class="review-card">
                     <div class="review-card-head">
@@ -805,6 +851,8 @@
             attachEvidence("evDoj", "evDojDetail", data.evidence, "doj");
             attachEvidence("evPinCode", "evPinCodeDetail", data.evidence, "pin_code");
 
+            refreshCopyBlock();
+
             reviewSection.scrollIntoView({ behavior: "smooth", block: "start" });
         }
 
@@ -917,6 +965,27 @@
             if (locDisp) locDisp.value = loc;
         }
 
+        /* Facility selection ALWAYS drives the derived classification: the row
+           from HubName.xlsx fixes cost code, operation, entity, facility type
+           and (via onSmartCostCodeChange) the role dropdown. Any stale LM/FM
+           OCR guess is overwritten, never retained. */
+        function applyFacilityDerived(h) {
+            var cc = (h.cost_code && String(h.cost_code).trim()) || "";
+            var op = h.operation || "";
+            var d = extractionData || {};
+            var ccInput = document.getElementById("rfCostCode");
+            var ftInput = document.getElementById("rfFacilityType");
+            if (cc) {
+                ccInput.value = cc;
+                if (h.entity) { ccInput.setAttribute("data-entity", h.entity); d.entity = h.entity; }
+                if (op) d.operation = op;
+                var ft = h.facility_type ||
+                    ((cc === "4441" || op === "First Mile") ? "Pickup Hub" : "Delivery Hub");
+                if (ftInput) ftInput.value = ft;
+            }
+            onSmartCostCodeChange();
+        }
+
         function pickFacilityRow(h, input) {
             input.value = h.facility_name;
             input.setAttribute("data-facility-ref", h.facility_ref || "");
@@ -924,23 +993,12 @@
             input.setAttribute("data-cost-code", h.cost_code || "");
             input.setAttribute("data-entity", h.entity || "");
             input.setAttribute("data-operation", h.operation || "");
+            input.setAttribute("data-facility-type", h.facility_type || "");
             input.setAttribute("data-duplicate", h.duplicate ? "1" : "0");
-            var ccInput = document.getElementById("rfCostCode");
-            if ((!ccInput.value.trim()) && h.cost_code) {
-                ccInput.value = h.cost_code;
-                if (h.operation) {
-                    var d = extractionData || {};
-                    d.operation = h.operation;
-                    d.entity = h.entity || "";
-                }
-            }
-            var ftInput = document.getElementById("rfFacilityType");
-            if (!ftInput.value.trim() && h.cost_code) {
-                ftInput.value = (h.cost_code === "4441") ? "Pickup Hub" : "Delivery Hub";
-            }
+            input.setAttribute("data-facility-manual", "1");
+            applyFacilityDerived(h);
             showLocationBadge();
             hideFacilityDrop();
-            onSmartCostCodeChange();
         }
 
         function hideFacilityDrop() {
@@ -950,91 +1008,241 @@
 
         var facilitySearchTimer = null;
         var facilityInput = document.getElementById("rfFacility");
-        if (facilityInput) {
-            facilityInput.addEventListener("input", function () {
-                var q = facilityInput.value.trim();
-                if (facilitySearchTimer) clearTimeout(facilitySearchTimer);
-                if (q.length < 2) { hideFacilityDrop(); return; }
-                facilitySearchTimer = setTimeout(function () {
-                    var params = new URLSearchParams({ query: q });
-                    var cc = document.getElementById("rfCostCode").value.trim();
-                    if (cc) params.set("cost_code", cc);
-                    fetch("/api/search-hubs?" + params.toString())
-                        .then(function (r) { return r.json(); })
-                        .then(function (data) {
-                            var rows = data.hubs || [];
-                            var drop = document.getElementById("rfFacilityDrop");
-                            if (!drop || document.activeElement !== facilityInput) return;
-                            drop.innerHTML = "";
-                            if (!rows.length) {
-                                var empty = document.createElement("div");
-                                empty.className = "hub-empty";
-                                empty.textContent = "No matching facility found. Check the name or search by location.";
-                                drop.appendChild(empty);
-                            } else {
-                                rows.forEach(function (h, idx) {
-                                    var btn = document.createElement("button");
-                                    btn.type = "button";
-                                    btn.className = "hub-opt";
-                                    var dup = rows.filter(function (r2) { return r2.facility_name === h.facility_name; }).length > 1;
-                                    var d = h.facility_ref || "";
-                                    if (facilityInput.value.trim() &&
-                                        facilityInput.value.trim().toLowerCase() === (h.facility_name || "").toLowerCase()) {
-                                        btn.className = "hub-opt selected";
-                                    }
-                                    var subParts = [];
-                                    if (h.location) subParts.push(h.location);
-                                    if (h.operation) subParts.push(h.operation);
-                                    if (d) subParts.push(d);
-                                    if (dup) subParts.push("duplicate name — choose by location");
-                                    btn.innerHTML = '<span class="hub-main">' +
-                                        escapeHtml(h.facility_name) + "</span>" +
-                                        '<span class="hub-sub">' + escapeHtml(subParts.join(" · ")) + "</span>";
-                                    btn.setAttribute("data-i", String(idx));
-                                    btn.addEventListener("mousedown", function (ev) {
-                                        ev.preventDefault();
-                                        var row = rows[parseInt(btn.getAttribute("data-i"), 10)];
-                                        row.duplicate = dup;
-                                        pickFacilityRow(row, facilityInput);
-                                    });
-                                    drop.appendChild(btn);
-                                });
-                            }
-                            drop.style.display = "";
-                        })
-                        .catch(function () { hideFacilityDrop(); });
-                }, 350);
+        var facilitySelIndex = -1;
+        var facilityDropData = [];
+
+        function renderFacilityDrop(rows) {
+            var drop = document.getElementById("rfFacilityDrop");
+            if (!drop) return;
+            facilityDropData = rows || [];
+            drop.innerHTML = "";
+            facilitySelIndex = -1;
+            var q = facilityInput.value.trim();
+            if (!q && !facilityDropData.length) { drop.style.display = "none"; return; }
+            if (!facilityDropData.length) {
+                var empty = document.createElement("div");
+                empty.className = "hub-empty";
+                empty.textContent = "No matching facility found. Check the name or search by location.";
+                drop.appendChild(empty);
+                drop.style.display = "";
+                return;
+            }
+            var byName = {};
+            facilityDropData.forEach(function (r) { byName[r.facility_name] = (byName[r.facility_name] || 0) + 1; });
+            facilityDropData.forEach(function (h, idx) {
+                var isDup = byName[h.facility_name] > 1;
+                var btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "hub-opt" + (q && q.toLowerCase() === (h.facility_name || "").toLowerCase() ? " selected" : "");
+                var subParts = [];
+                if (h.location) subParts.push(h.location);
+                if (h.operation) subParts.push(h.operation);
+                if (h.facility_ref && subParts.join(" · ").indexOf(h.facility_ref) === -1) subParts.push(h.facility_ref);
+                if (isDup) subParts.push("duplicate name — choose by location");
+                btn.innerHTML = '<span class="hub-main">' + escapeHtml(h.facility_name) + "</span>" +
+                                '<span class="hub-sub">' + escapeHtml(subParts.join(" · ")) + "</span>";
+                btn.setAttribute("data-i", String(idx));
+                btn.setAttribute("data-dup", isDup ? "1" : "0");
+                btn.addEventListener("mousedown", function (ev) {
+                    ev.preventDefault();
+                    var row = facilityDropData[parseInt(btn.getAttribute("data-i"), 10)];
+                    row.duplicate = btn.getAttribute("data-dup") === "1";
+                    pickFacilityRow(row, facilityInput);
+                });
+                drop.appendChild(btn);
             });
+            drop.style.display = "";
+            if (!q) {
+                var note = document.createElement("div");
+                note.className = "hub-count";
+                note.textContent = "All " + facilityDropData.length + " hubs in the master — type to filter";
+                drop.insertBefore(note, drop.firstChild);
+            }
+        }
+
+        function facilitySearch(q) {
+            if (facilitySearchTimer) clearTimeout(facilitySearchTimer);
+            var browse = !(q && q.trim().length);
+            facilitySearchTimer = setTimeout(function () {
+                var params = new URLSearchParams();
+                if (browse) params.set("all", "1");
+                else params.set("query", q.trim());
+                fetch("/api/search-hubs?" + params.toString())
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (!browse && document.activeElement !== facilityInput) return;
+                        renderFacilityDrop(data.hubs || []);
+                    })
+                    .catch(function () { hideFacilityDrop(); });
+            }, browse ? 0 : 250);
+        }
+
+        if (facilityInput) {
+            facilityInput.addEventListener("focus", function () {
+                facilitySelIndex = -1;
+                if (!facilityInput.value.trim()) facilitySearch("");
+                else facilitySearch(facilityInput.value.trim());
+            });
+            facilityInput.addEventListener("input", function () { facilitySearch(facilityInput.value.trim()); });
             facilityInput.addEventListener("blur", function () {
                 setTimeout(hideFacilityDrop, 200);
                 resolveFacilityFromValue();
+            });
+            facilityInput.addEventListener("keydown", function (e) {
+                var opts = Array.prototype.slice.call(
+                    (document.getElementById("rfFacilityDrop") || {}).querySelectorAll ? document.getElementById("rfFacilityDrop").querySelectorAll(".hub-opt") : []);
+                if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    if (!opts.length) return;
+                    facilitySelIndex = (e.key === "ArrowDown")
+                        ? (facilitySelIndex + 1) % opts.length
+                        : (facilitySelIndex - 1 + opts.length) % opts.length;
+                    for (var i = 0; i < opts.length; i++) {
+                        opts[i].style.background = (i === facilitySelIndex) ? "#eef2ff" : "";
+                    }
+                    opts[facilitySelIndex].scrollIntoView({ block: "nearest" });
+                    return;
+                }
+                if (e.key === "Enter" && facilitySelIndex >= 0 && opts[facilitySelIndex]) {
+                    e.preventDefault();
+                    var btn = opts[facilitySelIndex];
+                    var row = facilityDropData[parseInt(btn.getAttribute("data-i"), 10)];
+                    row.duplicate = btn.getAttribute("data-dup") === "1";
+                    pickFacilityRow(row, facilityInput);
+                    return;
+                }
+                if (e.key === "Escape") hideFacilityDrop();
             });
         }
 
         function resolveFacilityFromValue() {
             var fac = document.getElementById("rfFacility");
             if (!fac || !fac.value.trim()) return;
-            var params = new URLSearchParams({ facility: fac.value.trim() });
+            if (fac.getAttribute("data-facility-manual") === "1") { showLocationBadge(); return; }
             var loc = fac.getAttribute("data-location") || "";
             var ref = fac.getAttribute("data-facility-ref") || "";
-            if (!loc && !ref) {
-                fetch("/api/location?" + params.toString())
-                    .then(function (r) { return r.json(); })
-                    .then(function (res) {
-                        if (res.location || res.facility_ref) {
-                            if (res.facility_ref) fac.setAttribute("data-facility-ref", res.facility_ref);
-                            if (res.location) fac.setAttribute("data-location", res.location);
-                            if (res.cost_code) fac.setAttribute("data-cost-code", res.cost_code);
-                            showLocationBadge();
-                        } else {
-                            showLocationBadge();
+            if (loc && ref) { showLocationBadge(); return; }
+            var params = new URLSearchParams({ facility: fac.value.trim() });
+            fetch("/api/location?" + params.toString())
+                .then(function (r) { return r.json(); })
+                .then(function (res) {
+                    if (res.facility_ref || res.location) {
+                        if (res.facility_ref) fac.setAttribute("data-facility-ref", res.facility_ref);
+                        if (res.location) fac.setAttribute("data-location", res.location);
+                        if (res.cost_code) fac.setAttribute("data-cost-code", res.cost_code);
+                        if (res.entity) fac.setAttribute("data-entity", res.entity);
+                        if (res.operation) fac.setAttribute("data-operation", res.operation);
+                        if (res.facility_type) fac.setAttribute("data-facility-type", res.facility_type);
+                        if (res.cost_code) {
+                            var ccInput = document.getElementById("rfCostCode");
+                            if (ccInput && ccInput.value.trim() !== String(res.cost_code)) {
+                                ccInput.value = String(res.cost_code);
+                                if (res.entity) ccInput.setAttribute("data-entity", res.entity);
+                                var d = extractionData || {};
+                                if (res.entity) d.entity = res.entity;
+                                if (res.operation) d.operation = res.operation;
+                                var ftInput = document.getElementById("rfFacilityType");
+                                if (ftInput) {
+                                    ftInput.value = res.facility_type ||
+                                        ((res.cost_code === "4441" || res.operation === "First Mile") ? "Pickup Hub" : "Delivery Hub");
+                                }
+                                onSmartCostCodeChange();
+                            }
                         }
-                    })
-                    .catch(function () { showLocationBadge(); });
+                        if (res.facility_name && res.facility_ref) fac.value = res.facility_name;
+                        showLocationBadge();
+                    } else {
+                        showLocationBadge();
+                    }
+                })
+                .catch(function () { showLocationBadge(); });
+        }
+
+        /* ── Copy-ready personal details block ───────────────────────────── */
+        var COPY_FIELD_DEFS = [
+            { id: "rfAadhaar",    cpy: "cpAadhar",  label: "Aadhar No", kind: "aadhaar" },
+            { id: "rfDob",        cpy: "cpDob",     label: "DOB",       kind: "dob" },
+            { id: "rfFatherName", cpy: "cpFather",  label: "Fathers Name", kind: "text" },
+            { id: "rfAddress",    cpy: "cpAddress", label: "Address",   kind: "address" },
+            { id: "rfPinCode",    cpy: "cpPin",     label: "Pin Code",  kind: "pin" },
+            { id: "rfGender",     cpy: "cpGender",  label: "Gender",    kind: "text" }
+        ];
+
+        function formatDobForCopy(s) {
+            s = (s || "").trim();
+            var m = s.match(/^(\d{2})[/\-.](\d{2})[/\-.](\d{4})$/);
+            if (m) return m[1] + "/" + m[2] + "/" + m[3];
+            var m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (m2) return m2[3] + "/" + m2[2] + "/" + m2[1];
+            return s;
+        }
+
+        function copyFieldValue(def) {
+            var el = document.getElementById(def.id);
+            var raw = el ? el.value : "";
+            if (def.kind === "aadhaar") return raw.replace(/\D/g, "").slice(0, 12);
+            if (def.kind === "dob") return formatDobForCopy(raw);
+            if (def.kind === "pin") return raw.replace(/\D/g, "");
+            if (def.kind === "address") return raw.replace(/\s*\n+\s*/g, " ").replace(/\s+/g, " ").trim();
+            return raw.trim();
+        }
+
+        function copyCurrentValues(withHeaders) {
+            var vals = COPY_FIELD_DEFS.map(copyFieldValue);
+            var text = withHeaders
+                ? COPY_FIELD_DEFS.map(function (d) { return d.label; }).join("\t") + "\n" + vals.join("\t")
+                : vals.join("\t");
+            function done() {
+                var note = document.getElementById("copyNote");
+                if (note) {
+                    note.textContent = "Copied 6 fields";
+                    note.style.display = "";
+                    if (copyNoteTimer) clearTimeout(copyNoteTimer);
+                    copyNoteTimer = setTimeout(function () { note.style.display = "none"; }, 2500);
+                } else if (typeof showToast === "function") {
+                    showToast("Copied 6 fields", "success");
+                }
+            }
+            function legacyCopy() {
+                var ta = document.createElement("textarea");
+                ta.value = text;
+                ta.style.position = "fixed";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+                document.body.removeChild(ta);
+                done();
+            }
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(done, legacyCopy);
             } else {
-                showLocationBadge();
+                legacyCopy();
             }
         }
+
+        function refreshCopyBlock() {
+            var card = document.getElementById("copyDetailsCard");
+            var has = false;
+            COPY_FIELD_DEFS.forEach(function (def) {
+                var disp = document.getElementById(def.cpy);
+                var v = copyFieldValue(def);
+                if (disp) disp.textContent = v || "—";
+                if (v) has = true;
+            });
+            if (card) card.style.display = has ? "" : "none";
+        }
+
+        var copyNoteTimer = null;
+        var btnCopy = document.getElementById("btnCopyDetails");
+        var btnCopyHdr = document.getElementById("btnCopyHeaders");
+        if (btnCopy) btnCopy.addEventListener("click", function () { copyCurrentValues(false); });
+        if (btnCopyHdr) btnCopyHdr.addEventListener("click", function () { copyCurrentValues(true); });
+        COPY_FIELD_DEFS.forEach(function (def) {
+            var el = document.getElementById(def.id);
+            if (el) el.addEventListener("input", refreshCopyBlock);
+            if (el) el.addEventListener("change", refreshCopyBlock);
+        });
 
         /* ── Role / Designation searchable dropdown ───────────────────────── */
         var roleInput = document.getElementById("rfRole");

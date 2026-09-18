@@ -1957,17 +1957,22 @@ async def get_documents(candidate_id: Optional[int] = None):
 
 
 @app.get("/api/search-hubs")
-async def search_hubs(cost_code: str = "", query: str = ""):
-    """Facility typeahead: primary search text is the display name (Column C);
-    the system reference (Column A) and location (Column B) are also searched.
-    Returns EXACT master rows (never invented values) — including the row's
-    location and facility_ref — so the UI can bind a row exactly and duplicate
-    display names can be offered as explicit choices.
+async def search_hubs(cost_code: str = "", query: str = "", all: str = ""):
+    """Facility typeahead backed by the FULL HubName master (never cost-code
+    filtered): primary search text is the display name (Column C / readable
+    fallback); the system reference (Column A) and location (Column B) are also
+    searched. ``all=1`` returns the complete master for browse mode. Every item
+    is an EXACT master row (never an invented value) carrying location,
+    facility_ref, cost_code, entity, operation and facility_type, so the UI can
+    bind the row exactly and derive Role/Location/Cost Code from the selection.
     """
-    if query:
-        rows = master_data.fuzzy_search_facilities(query, cost_code, top_n=5)
+    browse = all and not query
+    if browse:
+        rows = master_data.fuzzy_search_facilities("", "", top_n=10000, full=True)
+    elif query:
+        rows = master_data.fuzzy_search_facilities(query, top_n=12)
     else:
-        rows = master_data.get_facility_rows(cost_code)[:20]
+        rows = master_data.fuzzy_search_facilities("", "", top_n=10000, full=True)
     hubs = []
     locations: dict[str, str] = {}
     for r in rows:
@@ -1986,18 +1991,24 @@ async def search_hubs(cost_code: str = "", query: str = ""):
     return JSONResponse({
         "hubs": hubs,
         "locations": locations,
-        "total": len(master_data.get_hubs_for_cost_code(cost_code)) if cost_code else len(master_data.get_facility_names()),
+        "total": len(master_data.get_facility_rows()),
     })
 
 
 @app.get("/api/location")
 async def location_for_facility(facility: str = "", location: str = "", facility_ref: str = ""):
     resolved = master_data.resolve_facility_selection(facility, location, facility_ref)
+    row = master_data.get_facility_row_by_key(resolved.get("hub_key", "")) or {}
     return JSONResponse({
         "facility": facility,
         "facility_name": resolved["facility_name"],
         "location": resolved["location"],
         "facility_ref": resolved["facility_ref"],
+        "hub_key": resolved["hub_key"],
+        "cost_code": row.get("cost_code", ""),
+        "entity": row.get("entity", ""),
+        "operation": row.get("operation", ""),
+        "facility_type": row.get("facility_type", ""),
     })
 
 

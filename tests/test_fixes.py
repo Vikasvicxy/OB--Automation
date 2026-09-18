@@ -403,13 +403,16 @@ def test_b_pallavi_end_to_end_timestamp():
 
 def test_c_renuka_still_works():
     """TEST C — RENUKA: 'LM sorter' + 'Nelamangala' + 15500
-    must KEEP resolving to 4421 / LM - Sorter / BLR/NLM / 15500."""
+    must KEEP resolving to 4421 / LM - Sorter / LM display NelamangalaHub_BLR
+    (location BLR/NLM) / 15500."""
     print("TEST C — RENUKA (keep working)")
     r = rules.resolve_smart_onboarding("LM sorter", "Nelamangala")
     check(r["cost_code"] == "4421", f"cost_code = 4421 (got {r['cost_code']!r})")
     check(r["role"] == "LM - Sorter", f"role = LM - Sorter (got {r['role']!r})")
-    check(r["facility"] == "BLR/NLM",
-          f"facility = BLR/NLM (got {r['facility']!r})")
+    check(r["facility"] == "NelamangalaHub_BLR",
+          f"facility = NelamangalaHub_BLR (got {r['facility']!r})")
+    check(rules.get_location_for_facility(r["facility"]) == "BLR/NLM",
+          f"location = BLR/NLM (got {rules.get_location_for_facility(r['facility'])!r})")
 
 
 def test_needs_attention_not_flip_pallavi_pl():

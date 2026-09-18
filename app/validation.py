@@ -111,7 +111,7 @@ SET_A: list[dict] = [
             "operation": "Last Mile",
             "cost_code": "4421",
             "role": "LM - Sorter",
-            "facility": "BLR/NLM",
+            "facility": "NelamangalaHub_BLR",
             "salary": 15500,
         },
         "notes": "Standard Flipkart LM sorter.",
@@ -151,7 +151,7 @@ SET_A: list[dict] = [
             "operation": "Last Mile",
             "cost_code": "4421",
             "role": {"compatible_with": "4421"},
-            "facility": "BLR/NLM",
+            "facility": "NelamangalaHub_BLR",
             "salary": 18500,
         },
         "notes": "Decimal-k salary 18.5k -> 18500.",
@@ -333,22 +333,24 @@ SET_A: list[dict] = [
     },
     {
         "case_id": "CASE 15",
-        "title": "Sorter only - NelamangalaHub_BLR (ambiguous LM/FM)",
+        "title": "Sorter only - NelamangalaHub_BLR (exact LM display)",
         "role_text": "sorter",
         "hub_text": "NelamangalaHub_BLR",
         "salary_text": "17000",
         "tag": "Varied",
         "ocr_capable": True,
-        "expect_review": True,
+        "expect_review": False,
         "expected": {
             "entity": "Flipkart",
-            "facility": {"options": [], "allow_blank": True},
+            "operation": "Last Mile",
+            "cost_code": "4421",
+            "role": {"compatible_with": "4421"},
+            "facility": "NelamangalaHub_BLR",
             "salary": 17000,
-            "needs_review": True,
         },
-        "notes": "'NelamangalaHub_BLR' is no longer a display name on HubName.xlsx; the bare "
-               "Nelamangala locality matches BOTH a last-mile (BLR/NLM) and a first-mile "
-               "(NelamangalaHub_BLR_PL) hub -> Needs Review, never silent LM/FM flip.",
+        "notes": "'NelamangalaHub_BLR' is the LM display name (location BLR/NLM); an exact "
+               "readable name resolves unambiguously to Last Mile/4421. Only the BARE "
+               "Nelamangala locality (no _PL / LM / FM token) stays ambiguous -> review.",
     },
     {
         "case_id": "CASE 16",
@@ -364,7 +366,7 @@ SET_A: list[dict] = [
             "operation": "Last Mile",
             "cost_code": "4421",
             "role": "LM - Sorter",
-            "facility": "BLR/NLM",
+            "facility": "NelamangalaHub_BLR",
             "salary": 15500,
         },
         "notes": "Fuzzy facility spelling + alias 'sort' => Sorter.",
@@ -501,7 +503,7 @@ SET_B: list[dict] = [
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
             "role": {"compatible_with": "4421"},
-            "facility": "BLR/NLM", "salary": 19000,
+            "facility": "NelamangalaHub_BLR", "salary": 19000,
         },
         "notes": "Official LM Delivery Executive role; fuzzy hub spelling.",
     },
@@ -659,7 +661,7 @@ SET_B: list[dict] = [
         "expect_review": False,
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
-            "role": "LM - Sorter", "facility": {"options": ["BLR/NLM"], "allow_blank": True},
+            "role": "LM - Sorter", "facility": {"options": ["NelamangalaHub_BLR"], "allow_blank": True},
             "salary": 17500, "must_not": ["4441", "NelamangalaHub_BLR_PL"],
         },
         "notes": "Explicit LM wins; never selects the _PL hub; never flips to 4441.",
@@ -676,9 +678,9 @@ SET_B: list[dict] = [
         "expected": {
             "entity": "Flipkart", "operation": "First Mile", "cost_code": "4441",
             "role": "FM - Sorter", "facility": {"options": ["NelamangalaHub_BLR_PL"], "allow_blank": True},
-            "salary": 17500, "must_not": ["4421", "BLR/NLM"],
+            "salary": 17500, "must_not": ["4421", "NelamangalaHub_BLR"],
         },
-        "notes": "Explicit FM wins; never selects the LM hub (BLR/NLM); never flips to 4421.",
+        "notes": "Explicit FM wins; never selects the LM hub (NelamangalaHub_BLR); never flips to 4421.",
     },
     {
         "case_id": "CASE B15",
@@ -691,7 +693,7 @@ SET_B: list[dict] = [
         "expect_review": False,
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
-            "role": "LM - Sorter", "facility": "BLR/NLM", "salary": 15750,
+            "role": "LM - Sorter", "facility": "NelamangalaHub_BLR", "salary": 15750,
         },
         "notes": "15.75k -> 15750 (decimal-k).",
     },
@@ -813,7 +815,7 @@ SET_C: list[dict] = [
         "tag": "Set C", "ocr_capable": True, "expect_review": False,
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
-            "role": {"compatible_with": "4421"}, "facility": "BLR/NLM",
+            "role": {"compatible_with": "4421"}, "facility": "NelamangalaHub_BLR",
             "salary": 19000,
         },
         "notes": "Phrase 'last-mile delivery' -> LM; fuzzy hub spelling.",
@@ -856,7 +858,7 @@ SET_C: list[dict] = [
         "tag": "Set C", "ocr_capable": True, "expect_review": False,
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
-            "role": {"compatible_with": "4421"}, "facility": "BLR/NLM",
+            "role": {"compatible_with": "4421"}, "facility": "NelamangalaHub_BLR",
             "salary": 17000,
         },
         "notes": "Alias 'biker' -> Delivery-compatible role.",
@@ -974,15 +976,17 @@ SET_C: list[dict] = [
         "notes": "Exact _PL hub -> FM + FM Delivery role.",
     },
     {
-        "case_id": "C18", "title": "delivery - NelamangalaHub_BLR (ambiguous LM/FM)",
+        "case_id": "C18", "title": "delivery - NelamangalaHub_BLR (exact LM display)",
         "role_text": "delivery", "hub_text": "NelamangalaHub_BLR", "salary_text": "18000",
-        "tag": "Set C", "ocr_capable": True, "expect_review": True,
+        "tag": "Set C", "ocr_capable": True, "expect_review": False,
         "expected": {
-            "entity": "Flipkart", "facility": {"options": [], "allow_blank": True},
-            "salary": 18000, "needs_review": True,
+            "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
+            "role": {"compatible_with": "4421"}, "facility": "NelamangalaHub_BLR",
+            "salary": 18000,
         },
-        "notes": "'NelamangalaHub_BLR' is no longer a display name; the bare locality matches "
-               "both last-mile (BLR/NLM) and first-mile (NelamangalaHub_BLR_PL) -> Needs Review.",
+        "notes": "'NelamangalaHub_BLR' is the exact LM display name (location BLR/NLM); "
+               "an exact readable name resolves to Last Mile/4421. The BARE Nelamangala "
+               "locality (no _PL / LM / FM token) remains ambiguous -> review.",
     },
     {
         "case_id": "C19", "title": "sorter - HebbalMYNTRAHub_BLR (exact infer Myntra)",
@@ -1014,7 +1018,7 @@ SET_C: list[dict] = [
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
             "role": "LM - Sorter",
-            "facility": {"options": ["BLR/NLM"], "allow_blank": True},
+            "facility": {"options": ["NelamangalaHub_BLR"], "allow_blank": True},
             "salary": 18000, "must_not": ["NelamangalaHub_BLR_PL", "4441"],
         },
         "notes": "Operation stays Last Mile; never select _PL hub.",
@@ -1027,7 +1031,7 @@ SET_C: list[dict] = [
             "entity": "Flipkart", "operation": "First Mile", "cost_code": "4441",
             "role": {"compatible_with": "4441"},
             "facility": {"options": ["NelamangalaHub_BLR_PL"], "allow_blank": True},
-            "salary": 18000, "must_not": ["BLR/NLM", "4421"],
+            "salary": 18000, "must_not": ["NelamangalaHub_BLR", "4421"],
         },
         "notes": "Operation stays First Mile; never select LM hub.",
     },
@@ -1038,7 +1042,7 @@ SET_C: list[dict] = [
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
             "role": "LM - Sorter",
-            "facility": {"options": ["BLR/NLM"], "allow_blank": True},
+            "facility": {"options": ["NelamangalaHub_BLR"], "allow_blank": True},
             "salary": 18000, "must_not": ["NelamangalaHub_BLR_PL", "4441"],
         },
         "notes": "Never retain _PL for explicit LM; compatible LM hub or review.",
@@ -1134,7 +1138,7 @@ SET_C: list[dict] = [
         "tag": "Set C", "ocr_capable": True, "expect_review": False,
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
-            "role": "LM - Team Leader", "facility": "BLR/NLM", "salary": 21000,
+            "role": "LM - Team Leader", "facility": "NelamangalaHub_BLR", "salary": 21000,
         },
         "notes": "Alias 'tl' -> Team Leader; ₹21,000 -> 21000.",
     },
@@ -1209,7 +1213,7 @@ SET_C: list[dict] = [
         "tag": "Set C", "ocr_capable": True, "expect_review": False,
         "expected": {
             "entity": "Flipkart", "operation": "Last Mile", "cost_code": "4421",
-            "role": "LM - Sorter", "facility": "BLR/NLM", "salary": 18000,
+            "role": "LM - Sorter", "facility": "NelamangalaHub_BLR", "salary": 18000,
         },
         "notes": "'nelamanglaa' -> NelamangalaHub_BLR.",
     },

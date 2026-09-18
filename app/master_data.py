@@ -168,6 +168,22 @@ def _classify_facility_text(*parts: str) -> tuple[bool, bool, str, str, str]:
     return False, False, "4421", "Flipkart", "Last Mile"
 
 
+def _readable_name_from_ref(facility_ref: str) -> str:
+    """Extract the readable facility label from a Column A system reference.
+
+    Column A looks like ``BLR/NLM (NelamangalaHub_BLR)`` — the parenthetical
+    gives the human-searchable name. Used as the display fallback when Column C
+    (FACILITY NAME) is blank so the row stays visible and selectable under its
+    readable name (requirement: blank Column C rows are never dropped).
+    """
+    m = re.search(r"\(([^)]+)\)\s*$", facility_ref or "")
+    if m:
+        label = m.group(1).strip()
+        if label:
+            return label
+    return ""
+
+
 def _facility_row_key(facility_ref: str, location: str, display: str) -> str:
     """Unique identity for a master row: the LOCATION code (unique in the
     master), falling back to the system reference then the display name."""
@@ -190,8 +206,9 @@ def _extract_facilities(records: list) -> list[dict]:
       * Column B "LOCATION" is the Branch/location code used in the generated
         workbooks (e.g. ``HBB/BLR``). It is unique per row.
       * Column C "FACILITY NAME" is the human-searchable display label
-        (e.g. ``HebbalMYNTRAHub_BLR``). When blank it falls back to Column B,
-        then Column A.
+        (e.g. ``HebbalMYNTRAHub_BLR``). When blank it falls back to the readable
+        name embedded in Column A (``(… )`` suffix), then Column B, then
+        Column A — a blank Column C never drops the row.
     Rows sharing a display name (or with a missing name) are all kept; their
     uniqueness comes from the row key, not the display name.
     """
@@ -202,7 +219,7 @@ def _extract_facilities(records: list) -> list[dict]:
         location = _find_col(r, ["LOCATION", "LOCATION CODE"])
         facility_name = _find_col(r, ["FACILITY NAME", "FACILITYNAME"])
         if not facility_name or facility_name.upper() in ("FACILITY NAME", "FACILITY", "N/A", "NA"):
-            facility_name = location or facility_ref
+            facility_name = _readable_name_from_ref(facility_ref) or location or facility_ref
         if not (facility_ref or location or facility_name):
             continue
         if not facility_ref:
@@ -645,6 +662,16 @@ def get_facility_names() -> list[str]:
     return [f["facility_name"] for f in _effective_facilities()]
 
 
+def get_facility_row_by_key(hub_key: str) -> dict | None:
+    """Fetch the single effective master row for ``hub_key`` (location code),
+    or None. Used to attach derived classification (cost code, entity,
+    operation, facility type) to a resolved facility selection."""
+    if not hub_key:
+        return None
+    key = {f["hub_key"]: f for f in get_facility_rows()}.get(hub_key)
+    return dict(key) if key else None
+
+
 def get_facility_rows(cost_code: str = "") -> list[dict]:
     """Row-level facility view (Excel rows + active admin rows).
 
@@ -833,22 +860,37 @@ def get_hubs_for_cost_code(cost_code: str) -> list[str]:
     return names
 
 
-def _facility_search_rows(query: str, cost_code: str = "", top_n: int = 5) -> list[dict]:
-    """Score effective facility rows against ``query`` on display + system ref."""
-    rows = get_facility_rows(cost_code) if cost_code else get_facility_rows()
+def _facility_search_rows(query: str, cost_code: str = "", top_n: int = 5,
+                          full: bool = False) -> list[dict]:
+    """Score effective facility rows against ``query`` on display + system ref.
+
+    ``cost_code`` is intentionally IGNORED for filtering (Facility selection is
+    manual: the dropdown always searches the COMPLETE master so an LM-inferred
+    candidate can still pick an FM ``_PL`` hub and vice versa). Search text is
+    the display name (Column C / readable fallback), system reference (Column A)
+    and location (Column B); ``full=True`` returns the whole master (sorted for
+    browsing) regardless of query.
+    """
+    rows = get_facility_rows()
     if not rows:
         return []
+    if full:
+        crows = [dict(r) for r in rows]
+        crows.sort(key=lambda r: (r.get("operation", ""), r.get("facility_name", "")))
+        return crows
     q = (query or "").strip().lower()
+    q_norm = re.sub(r"[\s_\-]+", "", q)
     scored = []
     for row in rows:
-        display = row.get("facility_name", "")
-        ref = row.get("facility_ref", "")
-        loc = row.get("location", "")
         if not q:
             scored.append((0.0, row))
             continue
+        display = row.get("facility_name", "")
+        ref = row.get("facility_ref", "")
+        loc = row.get("location", "")
+        readable = _readable_name_from_ref(ref) or display
         best = 0.0
-        for hay in (display, ref, loc):
+        for hay in (display, ref, loc, readable):
             hl = hay.lower()
             if not hl:
                 continue
@@ -857,34 +899,65 @@ def _facility_search_rows(query: str, cost_code: str = "", top_n: int = 5) -> li
             elif q in hl:
                 best = max(best, 100.0)
             else:
-                clean = re.sub(r"[\s_\-]+", "", hl).replace("hub", "").replace("blr", "").replace("pl", "")
-                best = max(best, difflib.SequenceMatcher(None, re.sub(r"[\s_\-]+", "", q), clean).ratio() * 100)
+                hl_norm = re.sub(r"[\s_\-]+", "", hl)
+                if q_norm and q_norm in hl_norm:
+                    best = max(best, 96.0)
+                else:
+                    qclean = _strip_facility_noise(q_norm)
+                    hclean = _strip_facility_noise(hl_norm)
+                    q_tokens = [t for t in re.split(r"[\s_\-]+", q) if t]
+                    h_tokens = [t for t in re.split(r"[\s_\-]+", hl) if t]
+                    token_hits = sum(1 for qt in q_tokens for ht in h_tokens
+                                     if qt and ht and len(qt) >= 3 and (qt in ht or ht in qt))
+                    if q_tokens and token_hits:
+                        best = max(best, token_hits / len(q_tokens) * 90.0)
+                    elif qclean and hclean and len(hclean) >= 4:
+                        ratio = difflib.SequenceMatcher(None, qclean, hclean).ratio()
+                        if ratio >= 0.66:
+                            best = max(best, ratio * 100.0)
         scored.append((best, row))
-    if q:
-        scored.sort(key=lambda x: x[0], reverse=True)
-    else:
-        scored.sort(key=lambda x: x[0], reverse=True)
+    scored.sort(key=lambda x: x[0], reverse=True)
+    max_exact = scored[0][0] if scored else 0.0
     out = []
     for score, row in scored:
         if q and score < 30:
             break
+        if q and max_exact >= 96.0 and score < 96.0:
+            continue
         out.append(dict(row))
         if len(out) >= top_n:
             break
     return out
 
 
-def fuzzy_search_facilities(query: str, cost_code: str = "", top_n: int = 5) -> list[dict]:
-    """Fuzzy search facility master ROWS (filtered by cost code if given).
+def _strip_facility_noise(s: str) -> str:
+    """Strip structural affixes (hub/hubs/blr/pl/myntra/… ) from a normalized
+    facility string so only the discriminative locality remains for fuzzy
+    scoring (e.g. ``nelamangalahubblrpl`` -> ``nelamanga``)."""
+    out = (s or "").lower()
+    for m in ("myntra", "hubs", "hub", "blr", "pl", "mpl", "lm", "fm"):
+        out = out.replace(m, "")
+    return re.sub(r"[^a-z0-9]+", "", out)
 
-    Primary search text is the display name (Column C); the system reference
-    (Column A) and location (Column B) are searched too, so
-    ``HebbalMYNTRAHub_BLR``/``HBB/BLR`` also resolve. Returns up to top_n rows
-    as dicts carrying {facility_name, location, facility_ref, facility,
-    hub_key, ...}. Duplicate display names appear once per row so the UI can
-    offer an exact pick. Final values always come from the master.
+
+def fuzzy_search_facilities(query: str, cost_code: str = "", top_n: int = 5,
+                            full: bool = False) -> list[dict]:
+    """Fuzzy search facility master ROWS across the COMPLETE master.
+
+    Facility selection is manual, so ``cost_code`` is never used to pre-filter
+    the available rows — every valid HubName row (Last Mile, First Mile ``_PL``,
+    Myntra, IPC/LDP, other) stays searchable/selectable regardless of the
+    current inference.
+
+    Primary search text is the display name (Column C / readable fallback); the
+    system reference (Column A) and location (Column B) are searched too, so
+    ``NelamangalaHub_BLR``/``BLR/NLM`` and ``NelamangalaHub_BLR_PL`` all
+    resolve. Returns up to top_n rows as dicts carrying {facility_name,
+    location, facility_ref, facility, hub_key, ...}. Duplicate display names
+    appear once per row so the UI can offer an exact pick. Final values always
+    come from the master.
     """
-    return _facility_search_rows(query, cost_code, top_n)
+    return _facility_search_rows(query, "", top_n, full=full)
 
 
 def fuzzy_find_hub(query: str, hubs: list[str], top_n: int = 5) -> list[str]:
@@ -893,9 +966,9 @@ def fuzzy_find_hub(query: str, hubs: list[str], top_n: int = 5) -> list[str]:
     The constrained ``hubs`` display list is scored first; when nothing matches
     we fall back to the row-level search (system ref + location are searched
     too) and map results back to display names that exist in ``hubs``. This way
-    a hub whose display falls back to its location (e.g. ``BLR/NLM``) is still
-    findable by its readable name (``Nelamangala``) and the returned value is
-    always a valid entry of the constrained list.
+    a hub whose display fell back to a readable name (e.g. ``NelamangalaHub_BLR``)
+    is still findable by its location code (``BLR/NLM``) and the returned value
+    is always a valid entry of the constrained list.
     """
     if not hubs:
         return [r["facility_name"] for r in _facility_search_rows(query, "", top_n)]

@@ -523,6 +523,63 @@
     color: var(--text-secondary);
     font-size: 0.82rem;
 }
+.hub-drop .hub-count {
+    padding: 6px 10px 2px;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+}
+
+/* ── Copy-ready personal details block ───────────────────────────────────── */
+.copy-details-card .review-card-head {
+    flex-wrap: wrap;
+}
+.copy-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+.copy-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px 18px;
+    margin-top: 12px;
+}
+.copy-field {
+    min-width: 0;
+}
+.copy-field-wide {
+    grid-column: 1 / -1;
+}
+.copy-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: 3px;
+}
+.copy-value {
+    font-size: 0.88rem;
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.025);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    padding: 6px 9px;
+    min-height: 1.6em;
+    overflow-wrap: anywhere;
+}
+.copy-note {
+    margin-top: 10px;
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    background: #e6f7ee;
+    color: #166534;
+    border: 1px solid #a3d9b1;
+    width: fit-content;
+}
 
 /* ── Generate Excel success card ─────────────────────────────────────────── */
 .gen-success-card {
