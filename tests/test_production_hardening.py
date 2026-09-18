@@ -155,8 +155,10 @@ def test_unsafe_filename_upload():
     for name in unsafe:
         # Guard: the sanitize step used before storing/persisting an uploaded
         # file must strip the path down to a single basename and reject any
-        # traversal component. Simulate the upload-guard contract.
-        safe = Path(name).name
+        # traversal component. Simulate the upload-guard contract. Normalize
+        # Windows separators before Path().name so the assertion holds on any
+        # platform (Path().name splits on the host separator only).
+        safe = Path(name.replace("\\", "/")).name
         assert ".." not in safe, f"traversal component survived sanitize: {name}"
         assert "/" not in safe and "\\" not in safe, \
             f"path separators survived sanitize: {name}"
@@ -281,8 +283,9 @@ def test_path_traversal_upload_guard():
     ]
     for name in unsafe_names:
         # The safe upload path stores/writes only the basename. Simulate the
-        # guard used by document persistence: sanitize to basename.
-        safe = Path(name).name
+        # guard used by document persistence: sanitize to basename. Normalize
+        # separators first so the assertion is platform-independent.
+        safe = Path(name.replace("\\", "/")).name
         assert ".." not in safe and "/" not in safe and "\\" not in safe
         # Persist the sanitized form and confirm no traversal survives.
         db.insert_document({

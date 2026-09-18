@@ -30,3 +30,7 @@ data/logs/
 
 # Packaged release artifacts (built from source; never committed)
 release/
+
+# Windows launcher runtime state
+data/server.pid
+data/.deps-installed
