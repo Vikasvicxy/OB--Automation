@@ -35,8 +35,8 @@ Verification performed during the final archive pass (20 September 2026).
 
 | Check | Evidence |
 |-------|----------|
-| Commit pushed | `git fetch origin` → `HEAD == origin/master` |
-| Tag pushed | `git tag --list` shows `teamhr-final-v1.0.0`; pushed to origin |
+| Commit pushed | `git fetch origin` → `HEAD == origin/master` = `722c500` |
+| Tag pushed | `git tag --list` shows `teamhr-final-v1.0.0` (points at `722c500`); pushed to origin |
 | HubName in Git | `git ls-files data/masters/HubName.xlsx` |
 | Excel Generation in Git | `git ls-files "data/templates/Excel Generation.xlsx"`; file contains header rows only |
 | README | rewritten as the main landing page (15+ sections) |

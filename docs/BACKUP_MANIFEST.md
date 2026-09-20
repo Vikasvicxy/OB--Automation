@@ -13,7 +13,7 @@ recommendations for ongoing backups.
 |------|-------|
 | Repository | <https://github.com/Vikasvicxy/OB--Automation.git> |
 | Branch | `master` |
-| Final commit | `5f65942` **plus** the final archive commit (see below) |
+| Final commit | `722c500` — "Finalize TeamHR documentation CI and Windows handoff" (tag commit) |
 | Final tag | `teamhr-final-v1.0.0` |
 | Push status | pushed; local `HEAD == origin/master` (verified) |
 
@@ -89,6 +89,8 @@ are committed.
 ## 8. Final handoff record
 
 - **Date of final handoff:** 20 September 2026.
+- **Final commit:** `722c500` ("Finalize TeamHR documentation CI and Windows
+  handoff"), pushed to `master`; local `HEAD == origin/master` (verified 20 Sep 2026).
 - **Final stable tag:** `teamhr-final-v1.0.0`
   (message: *TeamHR final documented Windows-ready source before VM retirement*).
 - **Branch:** `master` (all commits pushed; working tree clean).
