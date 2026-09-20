@@ -1,36 +1,68 @@
-# Python
+# ============================================================================
+# TeamHR Automation - .gitignore
+# ============================================================================
+# Protect local environments, runtime candidate data, caches, secrets, browser
+# state and build output. Required runtime ASSETS (data/masters/*.xlsx,
+# data/templates/Excel Generation.xlsx, data/config.json, .env.example) are
+# source-controlled and must NOT be ignored.
+# ============================================================================
+
+# --- Python ---------------------------------------------------------------
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
 
-# Runtime data (sensitive - never commit)
+# --- Secrets / local config ------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Runtime candidate data (never commit) ---------------------------------
 data/database/
 data/generated/
 data/uploads/
+data/validation/
+data/portal/
+data/logs/
 
-# Benchmark images (real Aadhaar - never commit)
+# --- Backups (contain DB snapshots - never commit) -------------------------
+data/backups/
+
+# --- OCR benchmark images (real Aadhaar - never commit) --------------------
 data/ocr_benchmark/input/
 data/ocr_benchmark/output/
 
-# OS
-.DS_Store
-Thumbs.db
+# --- Logs -------------------------------------------------------------------
+logs/
+*.log
 
-venv/
-__pycache__/
-*.pyc
-.env
-data/database/
-data/generated/
-data/backups/
-data/portal/
-data/logs/
-.pytest_cache/
+# --- Temporary / candidate documents and images -----------------------------
+tmp/
+temp/
+candidate_uploads/
+candidate_images/
 
-# Packaged release artifacts (built from source; never committed)
-release/
+# --- Browser automation state (cookies / auth / sessions) ------------------
+playwright/
+.browser-state/
+storage_state*.json
+browser_profiles/
 
-# Windows launcher runtime state
+# --- Windows launcher runtime state ----------------------------------------
 data/server.pid
 data/.deps-installed
+
+# --- Build / release output -------------------------------------------------
+release/
+build/
+dist/
+*.spec
+
+# --- OS junk -----------------------------------------------------------------
+.DS_Store
+Thumbs.db

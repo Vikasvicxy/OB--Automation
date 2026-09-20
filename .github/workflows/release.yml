@@ -1,0 +1,85 @@
+name: Release
+
+# Manual or tag-triggered release packaging.
+# Purpose: validate the source, build a clean Windows source archive, and
+# publish it as a GitHub Release.
+#
+# IMPORTANT:
+#  - This project is a LOCAL desktop tool. CD means validated release
+#    packaging (source today, Windows EXE eventually) - NOT automatic eSampark
+#    submission, and never untested deployment.
+#  - A Windows PyInstaller EXE build is a documented TODO below. It is NOT yet
+#    validated; do not claim EXE support until it has been built and run on a
+#    real Windows machine.
+#  - No real credentials, candidate data, or PATs are required.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to tag (e.g. 1.1.0). Leave empty to keep current tag."
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test-and-package:
+    name: Test + build source artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run full cross-platform test suite
+        run: >-
+          python -m pytest tests/
+          --ignore=tests/benchmark_ocr.py
+          -q
+          -p no:cacheprovider
+
+      - name: Build clean Windows source archive
+        run: python .github/workflows/build_source_archive.py
+
+      - name: Create GitHub Release (dispatch / tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_TAG="${{ github.event.inputs.version && format('v{0}', github.event.inputs.version) || github.ref_name }}"
+          if [ -z "$RELEASE_TAG" ]; then RELEASE_TAG="v1.0.0"; fi
+          echo "Release tag: $RELEASE_TAG"
+          # --generate-notes creates release notes from merged PRs/commits.
+          gh release create "$RELEASE_TAG" \
+            "release/TeamHR-Windows-Source.zip" \
+            --title "TeamHR Automation $RELEASE_TAG" \
+            --generate-notes \
+            --draft || echo "Release creation skipped (tag may already exist)."
+
+  # ---- FUTURE WINDOWS EXE (documented TODO) ---------------------------------
+  # When a Windows EXE build is validated on a real machine, add a
+  # windows-latest job that:
+  #   1. installs requirements + pyinstaller,
+  #   2. runs `python -m PyInstaller --onefile --name TeamHR
+  #        --add-data "data/masters;data/masters"
+  #        --add-data "data/templates;data/templates"
+  #        --add-data "app/templates;app/templates"
+  #        --add-data "app/static;app/static"
+  #      app/main.py`,
+  #   3. runs the suite against the packaged EXE on a clean Windows VM,
+  #   4. uploads `dist/TeamHR.exe` to the same GitHub Release.
+  # Mark this TODO as done ONLY when those checks genuinely pass.
+  # ---------------------------------------------------------------------------

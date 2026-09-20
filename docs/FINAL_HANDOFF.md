@@ -1,157 +1,153 @@
 # TeamHR Automation — Final Handoff
 
-**Purpose:** This document is the source of truth for handing TeamHR Automation
-over to a Windows machine. The Ubuntu VM that hosted development is being
-retired; everything a Windows operator needs is committed to GitHub and packaged
-in this repo.
+**Purpose:** Start here if the original author is not available. This is the
+concise handoff for taking over TeamHR Automation on a Windows machine. The
+Ubuntu VM that hosted development is being retired; everything needed is
+committed to GitHub.
 
-**Tag:** `teamhr-windows-handoff-2026-09-18`
-**Cut from commit:** `792d3bcdeeb7cd0a13418942ebe5eebec3fc321b` (plus the
-finalization commit described below).
-**Application version:** `1.0.0-rc1`
+**Repository:** <https://github.com/Vikasvicxy/OB--Automation.git>
+**Stable branch:** `master`
+**Latest stable tag:** `teamhr-final-v1.0.0`
+**Recommended Python:** 3.12 (3.10–3.13 expected to work)
 
 ---
 
-## 1. What this repo is
+## 1. What this project is
 
-Local recruitment onboarding tool: OCR (Aadhaar) → review → generate the
-Self-Onboarding + TeamHR Backend Mail Excel pair. FastAPI + Jinja2 + vanilla JS
-+ SQLite + openpyxl. Runs fully offline; no cloud AI/API at runtime.
+Local recruitment / onboarding automation: paste or upload a candidate's
+documents (Aadhaar card, WhatsApp chat/export) → local OCR extracts the fields →
+operator reviews and corrects them → candidates are saved and approved →
+**one Excel workbook** with two sheets (**OB Format** and **Mail Format**) is
+generated. Plus a **Copy Details** block for direct TAB-separated Excel paste.
 
-## 2. Repo layout (entry points)
+Runs **fully offline**. No cloud APIs, no automatic eSampark upload, no email /
+WhatsApp / SMS / voice unless a human explicitly turns safety flags on.
 
-| Path | Purpose |
-|------|---------|
-| `app/main.py` | FastAPI entry point (`app.main:app`, port 8000) |
-| `app/generation.py` | Excel pair generation + config (`data/config.json`) |
-| `app/rules.py` | Business rules / normalization |
-| `app/master_data.py` | Official masters (facilities, designations) |
-| `app/database.py` | SQLite at `data/database/teamhr.db` (auto-init) |
-| `data/masters/` | HubName.xlsx, Designation_Master.xlsx, self-onboarding template |
-| `data/templates/` | `Excel Generation.xlsx` (OB Format + Mail Format sheets) |
-| `scripts/setup_windows.ps1` | One-time Windows setup (venv, deps, Playwright, DB) |
-| `scripts/Start-TeamHR.ps1` / `.bat` | Start server + open browser |
-| `scripts/Stop-TeamHR.ps1` | Stop server |
-| `tests/` | 20 test modules (all passing) |
-| `docs/` | This handoff + quick start + business rules + full guides |
+## 2. Run it on Windows (quick)
 
-## 3. Getting it onto Windows
+```powershell
+git clone https://github.com/Vikasvicxy/OB--Automation.git
+cd OB--Automation
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 
-1. Copy the whole repo folder to, e.g., `C:\TeamHR-Automation`, or clone
-   `https://github.com/Vikasvicxy/OB--Automation.git`.
-2. Install Python 3.12 from <https://www.python.org/downloads/> (tick *Add to PATH*).
-3. Run `.\scripts\setup_windows.ps1` (venv, dependencies, Playwright Chromium, DB).
-4. Run `.\scripts\Start-TeamHR.bat` (or `.ps1`).
-5. Browser opens at <http://127.0.0.1:8000>.
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
 
-Full detail: `docs/WINDOWS_QUICK_START.md` and `docs/INSTALL_WINDOWS.md`.
+Open <http://127.0.0.1:8000>. Stop with Ctrl+C.
 
-## 4. What changed in this handoff pass
+Full guide: `docs/WINDOWS_QUICK_START.md`.
 
-- **PII sanitization (breaking finding handled):** the tracked template
-  `data/templates/Excel Generation.xlsx` contained **real candidate sample rows**
-  (names, mobile numbers, Aadhaar numbers, addresses) under the headers of both
-  sheets. It has been **sanitized**: all sample rows were removed and the file
-  now contains only the header rows (OB Format 13 cols, Mail Format 14 cols)
-  with formatting, widths, and sheet names preserved. The application already
-  strips sample rows at generation time, so output is unaffected.
-  - **Historical note:** the PII-bearing version exists in **published git
-    history** (commit `792d3bc` and earlier). It was **not** rewritten (no
-    history rewrite, no force push). Anyone who has already cloned has a copy.
-    Recommendation: rotate any affected access/contact expectations and treat
-    that file's data as disclosed. Going forward the tracked template is clean.
-- **Portable output config:** `data/config.json` previously pinned
-  `output_base_dir` to `C:\TeamHR-Automation\data\generated` (a Windows-only
-  path). It is now `""`, so the app falls back to the project-relative
-  `data/generated` on any machine/OS. Operators can set the output folder from
-  **Settings → Excel Output**.
-- **Windows scripts hardened:**
-  - Use `$VenvPython -m pip` (venv-bound) instead of global `pip`.
-  - `setup_windows.ps1` installs dependencies once and stamps
-    `data\.deps-installed`.
-  - `Start-TeamHR.ps1` only installs deps when the marker/venv is missing →
-    every-day starts are fast (no `pip install` on each launch).
-  - `Stop-TeamHR.ps1` unchanged (still works).
-  - `.gitignore` covers `data/server.pid` and `data/.deps-installed`.
-- **README** updated (removed "planned" tags, uses `python -m pip`,
-  references quick-start docs).
-- **New docs:** `docs/WINDOWS_QUICK_START.md`, `docs/BUSINESS_RULES.md`,
-  and this file.
-- **Test portability:** two path-traversal tests in
-  `tests/test_production_hardening.py` were made platform-independent (they
-  depended on Windows `\` separators in `Path().name`, so the suite's full
-  verification now passes on Linux too).
+## 3. Where things live
 
-## 5. Verification performed (all green on the Ubuntu VM)
+| Item | Location |
+|------|----------|
+| Facility master | `data/masters/HubName.xlsx` (FACILITY = A, LOCATION = B, FACILITY NAME = C) |
+| Role master | `data/masters/Designation_Master.xlsx` (DESIGNATION / COST CODE / PREFIX) |
+| `_PL`/pickup reference | `data/masters/Facility_Master.xlsx` |
+| Generation template | `data/templates/Excel Generation.xlsx` (OB Format 13 cols + Mail Format 14 cols) |
+| Candidate database | `data/database/teamhr.db` (auto-created) |
+| Generated workbooks | `data/generated/<date>/Onboarding_<ts>.xlsx` |
+| Backups | `data/backups/` |
+| Server logs | `data/logs/` |
 
-- **Tests:** all 20 modules in `tests/` pass
-  (≈8 465 assertions; includes validation variant sweeps, OCR/evidence,
-  facility dropdown + JS-harness copy-details checks, portal, hardening,
-  template smoke, regression phases 3–7).
-- **JS syntax:** `node --check` clean on `app/static/*.js`.
-- **JS harness:** `tests/_facility_js_harness.cjs` boots the real inline script
-  from `smart_upload.html`; Copy Details emits exactly
-  `Aadhar No\tDOB\tFathers Name\tAddress\tPin Code\tGender`
-  (e.g. `246697470317\t06/05/2006\tManik\tS/O: Manik, Kusarampalli\t585307\tMale`).
-- **Smoke (uvicorn on Ubuntu):** `/`, `/health`, `/smart-upload`,
-  `/candidates`, `/generated-files`, `/portal`, `/api/health`, `/api/counts`,
-  `/api/drafts`, `/api/generated`, `/api/search-hubs` all HTTP 200.
-- **Facility master:** 256 rows; facility search returns the complete master
-  (never cost-code filtered). `nelamangala` →
-  `NelamangalaHub_BLR` (4421, Delivery Hub) and `NelamangalaHub_BLR_PL`
-  (4441, Pickup Hub).
-- **Role dropdowns:** 4421 → LM roles incl. Prexo; 8751 → LM roles **without**
-  Prexo (business rule); FM roles for 4441/8752.
-- **Excel generation (synthetic, sanitized template):** both sheets produced;
-  OB Format Facility*=Location code, Mail Format Branch=Location & Vertical=
-  facility name, full Aadhaar only in the Mail sheet.
-- **Safety flags:** `REAL_UPLOAD_ENABLED`, `ESAMPARK_LIVE_TEST_MODE`,
-  `COMMUNICATION_ENABLED`, `EMAIL_ENABLED`, `WHATSAPP_ENABLED`, `SMS_ENABLED`,
-  `VOICE_ENABLED` all default off (code + `.env.example`).
-- **PII/path scan of tracked text files:** no `/home/`, `teamhr-work`,
-  `azureuser`, VM IPs, private keys, or committed secrets. Only
-  non-functional docs mention the `C:\TeamHR-Automation` install folder.
+## 4. How facility mapping works
 
-## 6. Known items / things to note on Windows
+- Facility dropdown searches the **complete HubName.xlsx** master — it is never
+  pre-filtered by the LM/FM guess, so the operator can pick any hub (including
+  an FM `_PL` row when OCR guessed LM).
+- Selecting a facility **overrides** stale OCR LM/FM inference and sets
+  location, cost code, facility type, and the role list.
+- Location/Branch in the workbook always comes from the master's **LOCATION**
+  column (Column B).
 
-- **Python 3.12 recommended.** 3.10–3.13 expected to work.
-- Playwright Chromium (`playwright install chromium`) is only needed for
-  eSampark portal automation; `setup_windows.ps1 -SkipBrowser` skips it.
-- `eSampark` credentials come from the environment (`.env`) **only**:
-  `ESAMPARK_USERNAME`, `ESAMPARK_PASSWORD`. Never put them in files committed
-  to git.
-- Live portal upload needs **both** `REAL_UPLOAD_ENABLED=true` **and**
-  `ESAMPARK_LIVE_TEST_MODE=true`; leave them off for normal operation.
-- First run: if the recruiter-name prompt appears, set it (stored in
-  `data/config.json`).
-- The Windows scripts assume the repo is the working directory and that
-  PowerShell is allowed to run (`Set-ExecutionPolicy RemoteSigned -Scope
-  CurrentUser` if blocked).
+## 5. How Excel generation works
 
-## 7. Business rules in one paragraph
+- Only **Ready** candidates are generated (Draft / Needs Attention excluded).
+- One workbook, two sheets from the same approved candidates:
+  - **OB Format**: `Sl No, Name*, Mobile Number*, Team*, Cost Code*,
+    Facility Type*, Line of Business*, Sub Type*, Role - Designation*,
+    Fixed Net Take Home*, State*, Facility*, Contractor*`
+  - **Mail Format**: `Date of Joining, Name, Mobile No, Designation, Branch,
+    Vertical, State, Net Salary, Aadhar No, DOB, Fathers Name, Address,
+    Pin Code, Gender`
+- Full Aadhaar appears **only** in the Mail Format sheet.
+- The template is never modified; a copy is written under a timestamped name.
 
-Four cost codes: 4421 (Flipkart LM), 4441 (Flipkart FM), 8751 (Myntra LM),
-8752 (Myntra FM, no hub master → *Needs Review*). Facility classification:
-MYNTRA → 8751; `_PL`/PICKUP → 4441; else 4421. Facility Master
-(`HubName.xlsx`: FACILITY | LOCATION | FACILITY NAME) provides the exact
-location/branch; roles come from `Designation_Master.xlsx` (no Prexo under
-8751). Generated workbooks contain only *Ready* candidates; full Aadhaar
-appears only in the Mail Format sheet. Copy Details block order:
-`Aadhar No, DOB, Fathers Name, Address, Pin Code, Gender` (tab-separated).
-Details: `docs/BUSINESS_RULES.md`.
+## 6. Cost codes (business essentials)
 
-## 8. Final release status
+| Code | Entity / Operation | Type |
+|------|--------------------|------|
+| 4421 | Flipkart Last Mile | Delivery Hub |
+| 4441 | Flipkart First Mile | Pickup Hub |
+| 8751 | Myntra Last Mile | Delivery Hub |
+| 8752 | Myntra First Mile | *Needs Review* (no hub master yet — not auto-assigned) |
 
-**READY FOR WINDOWS PRODUCTION USE** — all gates passed:
+Full rules: `docs/BUSINESS_RULES.md`.
 
-- [x] All tracked masters/templates present and sanitized
-- [x] Full automated test suite green; JS checks green
-- [x] Smoke test on Ubuntu green (all key routes + APIs)
-- [x] Excel generation verified against the sanitized template
-- [x] No hardcoded VM/user paths or secrets in production code
-- [x] Safety flags off by default
-- [x] Windows setup/start/stop scripts portable and fast
-- [x] Release package built under `release/TeamHR-Windows-Source/` (+ `.zip`)
-- [x] Git archive tagged `teamhr-windows-handoff-2026-09-18` and pushed
+## 7. Copy Details
 
-Follow `docs/WINDOWS_QUICK_START.md` on the Windows machine.
+Buttons on New Onboarding copy exactly, TAB-separated:
+
+```
+Aadhar No   DOB   Fathers Name   Address   Pin Code   Gender
+```
+
+with `Copy With Headers` adding the label row. Paste straight into Excel.
+
+## 8. Safety flags
+
+All **off** by default (in code and `.env.example`): `REAL_UPLOAD_ENABLED`,
+`ESAMPARK_LIVE_TEST_MODE`, `COMMUNICATION_ENABLED`, `EMAIL_ENABLED`,
+`WHATSAPP_ENABLED`, `SMS_ENABLED`, `VOICE_ENABLED`. Live eSampark upload
+requires **both** `REAL_UPLOAD_ENABLED=true` **and**
+`ESAMPARK_LIVE_TEST_MODE=true`. Leave them off for normal operation.
+
+## 9. Test it
+
+```powershell
+.\venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt   # test extras (pytest, httpx) - one time
+python -m pytest tests/ --ignore=tests/benchmark_ocr.py -q
+```
+
+(~378 tests, ~2–3 minutes; Node.js is needed for the Copy Details JS-harness
+test — GitHub runners and a normal Windows install both have Node.)
+
+## 10. How to continue development
+
+- Architecture: `docs/ARCHITECTURE.md`
+- Developer guide: `docs/DEVELOPMENT.md`
+- Business rules: `docs/BUSINESS_RULES.md`
+- Testing guide: `docs/TESTING.md`
+- Troubleshooting: `docs/TROUBLESHOOTING.md`
+- Project history & decisions: `docs/PROJECT_HISTORY.md`
+
+Branches: work on `feature/*`, open a PR, CI runs on it, merge to `master`.
+Never commit `.env`, DB files, generated workbooks, backups, or candidate
+documents.
+
+## 11. Future EXE packaging
+
+Not built yet — documented `TODO` in `.github/workflows/release.yml`. The
+release workflow (manual trigger) runs tests, then builds a **source** archive.
+A Windows `PyInstaller` EXE build is the intended next step; verify it on a
+real Windows machine before relying on it (`docs/CI_CD.md` → "Future windows
+EXE").
+
+## 12. How CI works
+
+`.github/workflows/ci.yml` runs on every push/PR on `ubuntu-latest` and
+`windows-latest` (Python 3.12): install deps → import/route checks → focused
+regression + facility + persistence + Excel + security tests → JS syntax. No
+real credentials or candidate data are required. Future **CD** = validated
+release packaging (source / EXE / GitHub Release) — not automatic eSampark
+submission.
+
+## 13. Release status
+
+**READY TO RETIRE VM** — see `docs/VM_RETIREMENT_CHECKLIST.md` (all items
+checked) and `docs/BACKUP_MANIFEST.md` for the exact handoff record. The final
+tag `teamhr-final-v1.0.0` is pushed to GitHub; `origin/master` is synchronized.

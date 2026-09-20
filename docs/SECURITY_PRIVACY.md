@@ -107,3 +107,22 @@ The system maintains multiple audit trails:
 10. **Communication outbox** (`communication_outbox`): message attempts and status
 
 All audit records include timestamps. Sensitive values are never stored in audit records.
+
+## Historical disclosure (final archive pass)
+
+- The tracked generation template `data/templates/Excel Generation.xlsx` once
+  contained **real candidate sample rows** (names, mobiles, Aadhaar numbers,
+  addresses). It was sanitized at the Windows handoff pass (headers only,
+  formatting preserved) and the current tracked file contains no candidate
+  rows.
+- The sanitized state was reached **without rewriting Git history** (no history
+  rewrite / no force push). The PII-bearing binary therefore still exists in
+  earlier published commits (`792d3bc` and before). Anyone who cloned before
+  the sanitization may retain it; treat that file's data as disclosed.
+- Two test fixtures in published history use realistic-looking sample values
+  (`tests/test_ramesh_fixture.py`, `tests/test_facility_dropdown.py`). They are
+  required by the regression suite; new documentation and artifacts no longer
+  repeat those values.
+- Recommendation: do not rotate the whole project for this; contact any
+  individuals plausibly represented and treat the data as disclosed. Going
+  forward, all example data in the repo is synthetic.
